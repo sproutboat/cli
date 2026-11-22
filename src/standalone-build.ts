@@ -12,6 +12,7 @@ import { chmod, cp, mkdir } from "node:fs/promises";
 import { resolve } from "node:path";
 import { readAssetRules, walkAssets } from "./assets";
 import { buildArtifact, emitGenerated, type BuildInput } from "./build";
+import { ASSETS_STORE_MIN_DATE } from "./cloud-deploy";
 import type { Bindings } from "./wrap";
 
 export type StandaloneBuildInput = BuildInput & {
@@ -106,6 +107,11 @@ export type AssetBakePlan = {
   budget: number;
   /** `bakedBytes` past `budget`; 0 when it fits. */
   overBy: number;
+  /**
+   * The project's compatibility date is ASSETS_STORE_MIN_DATE or later: the runtime reads the files that are not in the module from the
+   * Cloud's asset store, so leaving them out costs the worker nothing.
+   */
+  store: boolean;
 };
 
 /**
@@ -114,13 +120,16 @@ export type AssetBakePlan = {
  * text alike, confirmed against the linker), plus per file its key and manifest entry, plus the worker's own strings. The worker's
  * source counts in full (its code takes no static data, so this is an upper bound: a margin, not a measurement).
  *
- * The files that do not fit stay out, as in 0.58.0: the edge still serves them from the Cloud asset store, but `env.ASSETS.fetch`
- * in the worker finds none until the runtime reads that store.
+ * The files that do not fit stay out, as in 0.58.0, and the edge still serves them from the Cloud asset store. With a compatibility date of
+ * ASSETS_STORE_MIN_DATE or later the worker's `env.ASSETS.fetch` reads them from that store too (`store`); before it, it finds none, and the
+ * deploy warns.
  */
 export function planAssetBake(input: BuildInput): AssetBakePlan {
   const assets = input.config.assets;
   const reads = workerReadsAssets(assets);
-  const empty = { reads, bake: reads, files: 0, fileBytes: 0, bakedBytes: 0, budget: 0, overBy: 0 };
+  // A date is ISO, so the string order is the date order (as in checkServiceBindings and types-gen); a config without one compares false: old.
+  const store = input.config.compatibility_date >= ASSETS_STORE_MIN_DATE;
+  const empty = { reads, bake: reads, files: 0, fileBytes: 0, bakedBytes: 0, budget: 0, overBy: 0, store };
   if (!assets || !reads) return { ...empty, bake: false };
   const dir = resolve(input.projectDir, assets.directory);
   // A missing directory is the build's own error, raised with its message right after.
@@ -141,7 +150,7 @@ export function planAssetBake(input: BuildInput): AssetBakePlan {
     Buffer.byteLength(JSON.stringify(input.config.vars ?? {}), "utf8");
   const budget = Math.max(0, MODULE_STATIC_LIMIT - MODULE_STATIC_MARGIN - MODULE_STATIC_BASE - own);
   const overBy = Math.max(0, bakedBytes - budget);
-  return { reads, bake: overBy === 0, files: Object.keys(files).length, fileBytes, bakedBytes, budget, overBy };
+  return { reads, bake: overBy === 0, files: Object.keys(files).length, fileBytes, bakedBytes, budget, overBy, store };
 }
 
 /** The deploy's "assets" detail: which way the files go and why. */
@@ -150,16 +159,22 @@ export function describeAssetBake(plan: AssetBakePlan): string {
   if (!plan.reads) return "served by the edge, none in the module (the worker does not read env.ASSETS)";
   if (plan.bake)
     return `served by the edge, and kept in the module (the worker reads env.ASSETS; fits: ${bytes(plan.bakedBytes)} of ${bytes(plan.budget)} bytes)`;
-  return `served by the edge, none in the module (the worker reads env.ASSETS but the files are too big to bake: ${bytes(plan.overBy)} bytes over the limit of ${bytes(plan.budget)})`;
+  const tooBig = `the files are too big to bake: ${bytes(plan.overBy)} bytes over the limit of ${bytes(plan.budget)}`;
+  if (plan.store)
+    return `served by the edge, none in the module (the worker reads env.ASSETS but ${tooBig}; it reads them from the Cloud's asset store, compatibility_date ${ASSETS_STORE_MIN_DATE} or later)`;
+  return `served by the edge, none in the module (the worker reads env.ASSETS but ${tooBig}; set compatibility_date ${ASSETS_STORE_MIN_DATE} or later and it reads them from the Cloud's asset store)`;
 }
 
-/** The warning for a worker that reads its assets whose files do not fit, or undefined. */
+/**
+ * The warning for a worker that reads its assets whose files do not fit, or undefined. None from ASSETS_STORE_MIN_DATE on: the worker reads
+ * them from the Cloud's asset store, so nothing is lost.
+ */
 export function assetBakeWarning(plan: AssetBakePlan): string | undefined {
-  if (!plan.reads || plan.bake) return undefined;
+  if (!plan.reads || plan.bake || plan.store) return undefined;
   return (
     `the assets (${plan.files} files, ${plan.fileBytes.toLocaleString("en-US")} bytes) do not fit in the module: ` +
     `${plan.overBy.toLocaleString("en-US")} bytes over the limit. env.ASSETS.fetch inside the worker will not find these files on the Cloud ` +
-    `until the runtime reads the asset store; requests the edge serves from it still work`
+    `until the runtime reads the asset store; requests the edge serves from it still work. Set compatibility_date ${ASSETS_STORE_MIN_DATE} or later to have the worker read them from the Cloud's asset store`
   );
 }
 
@@ -177,7 +192,8 @@ export async function emitStandalone(
   if (!options.forCloud) assertStandaloneSupported(input);
   // A Cloud deploy sends the assets as a manifest the Cloud's edge serves; baking them into the module breaks its compile past about 1 MiB
   // ("static data exceeds module ABI region"). A worker that reads its assets (a binding, or run_sprout_first) keeps them in the module
-  // as well, as in 0.57.0, but only when they fit: past the limit they stay out (0.58.0), and the plan says so.
+  // as well, as in 0.57.0, but only when they fit: past the limit they stay out (0.58.0), and the plan says so (and, from ASSETS_STORE_MIN_DATE, that the
+  // worker reads them from the Cloud's asset store).
   const assetBake = options.forCloud === true ? planAssetBake(input) : undefined;
   const bakeAssets = assetBake === undefined || assetBake.bake;
   const { generatedPath } = await emitGenerated({ ...input, transport: "embedded", bakeAssets });

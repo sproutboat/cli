@@ -10,6 +10,10 @@ maintained going forward by the `release` skill.
 
 ## Unreleased
 
+### Changed
+
+- **A Cloud deploy with `compatibility_date` 2026-11-22 or later no longer warns when the assets do not fit in the module.** From that date a Cloud worker's `env.ASSETS.fetch()` reads the files it has not got in its module from the Cloud's asset store (the files the deploy uploads and the edge serves), so assets that fit under the 1 MiB static-data limit still bake into the module and the rest stay out with no warning; the `assets` line says the worker reads them from the Cloud's asset store. An older or missing date keeps the warning and now says to set `compatibility_date` 2026-11-22 or later. The constant is `ASSETS_STORE_MIN_DATE`, next to `SERVICE_BINDINGS_MIN_DATE`. This needs a Cloud whose runtime and hosts read the store; the runtime pin is not changed here.
+
 ## [0.59.1] - 2026-11-19
 
 Same toolchain, runtime and wire as 0.59.0 (`@sproutboat/toolchain` 0.28.0, `@sproutboat/runtime` 0.47.0, `@sproutboat/wire` 0.22.7), so there is no generation change.
