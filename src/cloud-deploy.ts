@@ -118,6 +118,11 @@ export function buildAssetBundle(projectDir: string, assets: NonNullable<Sproutb
 
 /** The platform runtime gates service bindings between Cloud apps behind this compatibility date. */
 export const SERVICE_BINDINGS_MIN_DATE = "2026-11-18";
+/**
+ * From this compatibility date a Cloud worker's `env.ASSETS.fetch()` reads the files it has not got in its module from the Cloud's asset store
+ * (the same files the deploy uploads and the edge serves), so a deploy no longer warns when they are too big to bake into the module.
+ */
+export const ASSETS_STORE_MIN_DATE = "2026-11-22";
 
 export type ServiceRef = { binding: string; service: string };
 type ServiceBindingEntry = { name: string; kind: "service"; resource_id: null; config: Record<string, never> };

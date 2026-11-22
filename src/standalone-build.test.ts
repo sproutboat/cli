@@ -5,6 +5,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { loadPrelude, wrapNativeFetchHandler } from "./compile";
 import type { BuildInput } from "./build";
+import { ASSETS_STORE_MIN_DATE } from "./cloud-deploy";
 import { parseConfig } from "./config";
 import {
   assetBakeWarning,
@@ -242,6 +243,7 @@ test("the real kitchen-sink config (worker-first, with a binding) gets its asset
 async function bakeCase(
   bytes: number,
   assets: Partial<NonNullable<BuildInput["config"]["assets"]>> = { binding: "ASSETS" },
+  date = "2026-10-01",
 ) {
   const projectDir = await mkdtemp(join(tmpdir(), "sb-bake-fit-"));
   try {
@@ -253,7 +255,7 @@ async function bakeCase(
       config: {
         name: "big-site",
         main: "src/index.js",
-        compatibility_date: "2026-10-01",
+        compatibility_date: date,
         assets: { directory: "site", ...assets },
       },
     };
@@ -283,6 +285,74 @@ test("assets over the module's static data limit are left out of a Cloud emit, w
   expect(describeAssetBake(emitted.assetBake!)).toContain(
     `${emitted.assetBake!.overBy.toLocaleString("en-US")} bytes over`,
   );
+});
+
+test("the store date is one constant, 2026-11-22", () => {
+  expect(ASSETS_STORE_MIN_DATE).toBe("2026-11-22");
+});
+
+test("from the store date, assets over the limit stay out with NO warning, and the line says the worker reads them from the Cloud's store", async () => {
+  for (const date of [ASSETS_STORE_MIN_DATE, "2026-12-01"]) {
+    const { emitted, module } = await bakeCase(1_100_000, { binding: "ASSETS" }, date);
+    expect(emitted.assetBake).toMatchObject({ reads: true, bake: false, store: true, files: 1 });
+    expect(emitted.assetBake!.overBy).toBe(1_100_000 + ONE_FILE_COST - BUDGET);
+    expect(module).not.toContain("A".repeat(1000));
+    expect(assetBakeWarning(emitted.assetBake!)).toBeUndefined();
+    const line = describeAssetBake(emitted.assetBake!);
+    expect(line).toContain("reads them from the Cloud's asset store");
+    expect(line).toContain("none in the module");
+    expect(line).not.toContain("set compatibility_date");
+  }
+});
+
+test("from the store date, assets that fit still bake, and the line is the same as before", async () => {
+  const { emitted, module } = await bakeCase(2000, { binding: "ASSETS" }, ASSETS_STORE_MIN_DATE);
+  expect(emitted.assetBake).toMatchObject({ reads: true, bake: true, store: true, overBy: 0 });
+  expect(module).toContain("A".repeat(2000));
+  expect(assetBakeWarning(emitted.assetBake!)).toBeUndefined();
+  expect(describeAssetBake(emitted.assetBake!)).toContain("kept in the module");
+});
+
+test("the bake boundary does not move with the date: one byte over stays out either way", async () => {
+  const over = await bakeCase(BUDGET - ONE_FILE_COST + 1, { binding: "ASSETS" }, ASSETS_STORE_MIN_DATE);
+  expect(over.emitted.assetBake).toMatchObject({ bake: false, overBy: 1, store: true });
+  const fit = await bakeCase(BUDGET - ONE_FILE_COST, { binding: "ASSETS" }, ASSETS_STORE_MIN_DATE);
+  expect(fit.emitted.assetBake).toMatchObject({ bake: true, overBy: 0 });
+});
+
+test("the day before the store date, and a missing date, keep the warning and add the hint to set the date", async () => {
+  const before = await bakeCase(1_100_000, { binding: "ASSETS" }, "2026-11-21");
+  expect(before.emitted.assetBake).toMatchObject({ bake: false, store: false });
+  const warning = assetBakeWarning(before.emitted.assetBake!)!;
+  expect(warning).toContain("env.ASSETS.fetch inside the worker will not find these files");
+  expect(warning).toContain(`Set compatibility_date ${ASSETS_STORE_MIN_DATE} or later`);
+  expect(describeAssetBake(before.emitted.assetBake!)).toContain(
+    `set compatibility_date ${ASSETS_STORE_MIN_DATE} or later`,
+  );
+  // no date at all (a config without one): treated as old
+  const dir = mkdtempSync(join(tmpdir(), "sb-bake-nodate-"));
+  try {
+    mkdirSync(join(dir, "site"));
+    writeFileSync(join(dir, "site/a.txt"), "x");
+    const config = { name: "a", main: "src/index.js", assets: { directory: "site", binding: "ASSETS" } };
+    // SAFETY: the config lacks compatibility_date on purpose, to check a config that arrives without one counts as an old date.
+    const plan = planAssetBake({
+      projectDir: dir,
+      sourcePath: "x",
+      source: "",
+      config: config as BuildInput["config"],
+    });
+    expect(plan.store).toBe(false);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("the store date does not change a worker that does not read its assets", async () => {
+  const { emitted } = await bakeCase(1_100_000, { not_found_handling: "404-page" }, ASSETS_STORE_MIN_DATE);
+  expect(emitted.assetBake).toMatchObject({ reads: false, bake: false });
+  expect(assetBakeWarning(emitted.assetBake!)).toBeUndefined();
+  expect(describeAssetBake(emitted.assetBake!)).toContain("does not read env.ASSETS");
 });
 
 test("small assets of a worker that reads them are still baked into a Cloud emit, and the line says it fits", async () => {
