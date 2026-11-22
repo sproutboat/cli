@@ -10,9 +10,15 @@ maintained going forward by the `release` skill.
 
 ## Unreleased
 
+## [0.60.0] - 2026-11-22
+
+New runtime and wire: `@sproutboat/runtime` 0.49.0, `@sproutboat/wire` 0.23.0 and `@sproutboat/assets` 0.3.2 (toolchain unchanged, 0.28.0). This is the runtime Sproutboat Cloud has run since 2026-11-22.
+
 ### Changed
 
-- **A Cloud deploy with `compatibility_date` 2026-11-22 or later no longer warns when the assets do not fit in the module.** From that date a Cloud worker's `env.ASSETS.fetch()` reads the files it has not got in its module from the Cloud's asset store (the files the deploy uploads and the edge serves), so assets that fit under the 1 MiB static-data limit still bake into the module and the rest stay out with no warning; the `assets` line says the worker reads them from the Cloud's asset store. An older or missing date keeps the warning and now says to set `compatibility_date` 2026-11-22 or later. The constant is `ASSETS_STORE_MIN_DATE`, next to `SERVICE_BINDINGS_MIN_DATE`. This needs a Cloud whose runtime and hosts read the store; the runtime pin is not changed here.
+- **A Cloud deploy with `compatibility_date` 2026-11-22 or later no longer warns when the assets do not fit in the module.** From that date a Cloud worker's `env.ASSETS.fetch()` reads the files it has not got in its module from the Cloud's asset store (the files the deploy uploads and the edge serves), so assets that fit under the 1 MiB static-data limit still bake into the module and the rest stay out with no warning; the `assets` line says the worker reads them from the Cloud's asset store. An older or missing date keeps the warning and now says to set `compatibility_date` 2026-11-22 or later. The constant is `ASSETS_STORE_MIN_DATE`, next to `SERVICE_BINDINGS_MIN_DATE`. It needs a Cloud whose runtime and hosts read the store, which Sproutboat Cloud does since 2026-11-22.
+- **Runtime 0.49.0.** `env.ASSETS.fetch()` serves from a per-deployment directory of the Cloud asset store when the host provides one, so a worker is no longer limited to the assets that fit in its module; from compatibility date 2026-11-22 it answers conditional requests (`304` with the `etag`) for baked and directory assets alike; the request path is percent-decoded before the lookup, as Cloudflare does; and `caches.default.put()` of a streamed asset response stores the body. Analytics Engine gets an index and an exact counter (`query({ limit })` no longer scans every point), and from compatibility date 2026-11-19 drops points older than 92 days, as Cloudflare does.
+- **Assets 0.3.2.** `.md` and `.markdown` files are served as `text/markdown; charset=utf-8` instead of `application/octet-stream`.
 
 ## [0.59.1] - 2026-11-19
 
@@ -1922,7 +1928,8 @@ its own package.
 - Renamed the package to `sproutboat` (was `@sproutboat/cli`); dropped the
   `sprout` bin alias in favour of a user-defined shell alias.
 
-[Unreleased]: https://github.com/sproutboat/cli/compare/v0.59.1...HEAD
+[Unreleased]: https://github.com/sproutboat/cli/compare/v0.60.0...HEAD
+[0.60.0]: https://github.com/sproutboat/cli/compare/v0.59.1...v0.60.0
 [0.59.1]: https://github.com/sproutboat/cli/compare/v0.59.0...v0.59.1
 [0.59.0]: https://github.com/sproutboat/cli/compare/v0.58.1...v0.59.0
 [0.58.1]: https://github.com/sproutboat/cli/compare/v0.58.0...v0.58.1
