@@ -449,8 +449,11 @@ function randomBytes(n) { return webcrypto.getRandomValues(new Uint8Array(n)); }
 function randomUUID() { return webcrypto.randomUUID(); }
 function createHash() { unavailable(); }
 function createHmac() { unavailable(); }
-export { webcrypto, randomBytes, randomUUID, createHash, createHmac };
-export default { webcrypto, randomBytes, randomUUID, createHash, createHmac, getRandomValues: (a) => webcrypto.getRandomValues(a), subtle: webcrypto.subtle };
+function getCiphers() { return []; }
+function getHashes() { return []; }
+function getCurves() { return []; }
+export { webcrypto, randomBytes, randomUUID, createHash, createHmac, getCiphers, getHashes, getCurves };
+export default { webcrypto, randomBytes, randomUUID, createHash, createHmac, getCiphers, getHashes, getCurves, getRandomValues: (a) => webcrypto.getRandomValues(a), subtle: webcrypto.subtle };
 `;
 
 /** Replaces Bun's browser polyfills, in a bundle at the sockets date or later (see bundle.ts). */

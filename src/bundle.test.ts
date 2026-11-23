@@ -2,7 +2,7 @@ import { expect, test } from "bun:test";
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { bundleHandler, BundleError } from "./bundle";
+import { bundleHandler, BundleError, PROCESS_GLOBAL_DATE } from "./bundle";
 import { validateHttpSyncSource } from "./source";
 import { neutraliseExports } from "./wrap";
 
@@ -294,6 +294,125 @@ test("a named function expression that shadows a global builtin function is rena
     const { code } = await bundleHandler(join(dir, "src/index.js"), dir, { compatibilityDate: "2026-11-17" });
     expect(code).not.toMatch(/function escape\(/);
     expect(code).toMatch(/function escape_sb\(/);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("from the sockets date a bundle may list node:crypto's ciphers, hashes and curves at load time", async () => {
+  // Effect's NodeCrypto layer runs `crypto.getCiphers().includes("chacha20-poly1305")` while the module
+  // loads. The shim used to lack it, Bun inlined the missing export as `undefined`, and the call threw a
+  // message-less TypeError before the first request (Alchemy F6).
+  const dir = project({
+    "src/index.js": `import * as crypto from "node:crypto"; const chacha = crypto.getCiphers().includes("chacha20-poly1305"); export default { fetch() { return new Response(String(chacha) + crypto.getHashes().length + crypto.getCurves().length); } };`,
+  });
+  try {
+    const { code } = await bundleHandler(join(dir, "src/index.js"), dir, { compatibilityDate: "2026-11-17" });
+    expect(code).toContain("function getCiphers()");
+    expect(code).not.toMatch(/\bundefined\(\)/);
+    expect(validateHttpSyncSource(code, "2026-11-17")).toEqual({ ok: true });
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("bare process.platform in app source: nothing is injected before the process-global date, and it is from it", async () => {
+  // Alchemy F6: a pre-bundled provider output reads `process.platform` while it loads. The stub went to node_modules
+  // files only, so the app's own bundle hit a missing global and died at init with a null read.
+  const dir = project({
+    "src/index.js": `const platform = process.platform === "win32" ? "w" : "p"; export default { fetch() { return new Response(platform); } };`,
+  });
+  try {
+    for (const compatibilityDate of ["2026-11-18", "2026-11-22", undefined]) {
+      const { code } = await bundleHandler(join(dir, "src/index.js"), dir, { compatibilityDate });
+      expect(code).not.toContain("sb-node-process");
+      expect(code).not.toContain("wasm32");
+    }
+    const { code } = await bundleHandler(join(dir, "src/index.js"), dir, { compatibilityDate: PROCESS_GLOBAL_DATE });
+    expect(PROCESS_GLOBAL_DATE).toBe("2026-11-23");
+    expect(code).toContain(`platform: "linux"`);
+    expect(code).toMatch(/\bprocess\d*\.platform\b/);
+    expect(validateHttpSyncSource(code, PROCESS_GLOBAL_DATE)).toEqual({ ok: true });
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("from the process-global date app-owned TypeScript and Buffer get the globals too, and a local binding is left alone", async () => {
+  const dir = project({
+    "src/util.ts": `export const hex = (s: string): string => Buffer.from(s).toString("hex");`,
+    "src/local.js": `export function run(process) { return process.platform; }`,
+    "src/index.ts": `import { hex } from "./util"; import { run } from "./local.js";\nconst name: string = process.env.NAME ?? "x";\nexport default { fetch() { return new Response(hex(name) + run({ platform: "p" })); } };`,
+  });
+  try {
+    const { code } = await bundleHandler(join(dir, "src/index.ts"), dir, { compatibilityDate: PROCESS_GLOBAL_DATE });
+    expect(code).toContain(`platform: "linux"`);
+    expect(code).toMatch(/Buffer/);
+    // The injected binding is one `process` for the whole bundle, and the function parameter still shadows it.
+    expect(code.match(/arch: "wasm32"/g)?.length).toBe(1);
+    expect(validateHttpSyncSource(code, PROCESS_GLOBAL_DATE)).toEqual({ ok: true });
+    const old = await bundleHandler(join(dir, "src/index.ts"), dir, { compatibilityDate: "2026-11-22" });
+    expect(old.code).not.toContain(`platform: "linux"`);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("from the process-global date process.env mirrors the string vars and secrets of globalThis.env, and before it stays empty", async () => {
+  const dir = project({
+    "node_modules/drv/package.json": JSON.stringify({ name: "drv", main: "index.js" }),
+    "node_modules/drv/index.js": `exports.fromDriver = function () { return process.env; };`,
+    "src/index.js": `import { fromDriver } from "drv"; globalThis.__sink({ app: process.env, driver: fromDriver() }); export default { fetch() { return new Response("x"); } };`,
+  });
+  // What the wrapper does before the handler's code runs: `vars` baked in, a secret as a lazy accessor, a KV binding.
+  type Seen = { app: Record<string, string | undefined>; driver: Record<string, string | undefined> };
+  const run = async (compatibilityDate: string) => {
+    const { code } = await bundleHandler(join(dir, "src/index.js"), dir, { compatibilityDate });
+    const body = code.replace(/^export\s*\{[^}]*\};?\s*$/m, "").replace(/^export default/m, "const __default =");
+    let reads = 0;
+    const env = { GREETING: "hello", CACHE: { get() {} }, OBJ: { a: 1 }, N: 1 };
+    Object.defineProperty(env, "API_KEY", {
+      configurable: true,
+      get() {
+        reads += 1;
+        return "s3cret";
+      },
+    });
+    Object.defineProperty(env, "UNSET", {
+      configurable: true,
+      get() {
+        throw new Error("no such secret");
+      },
+    });
+    let seen: Seen | undefined;
+    Reflect.set(globalThis, "env", env);
+    Reflect.set(globalThis, "__sink", (value: Seen) => {
+      seen = value;
+    });
+    try {
+      new Function(body)();
+      if (seen === undefined) throw new Error("the bundle did not run");
+      return { seen, reads: () => reads, env };
+    } finally {
+      Reflect.deleteProperty(globalThis, "env");
+      Reflect.deleteProperty(globalThis, "__sink");
+    }
+  };
+  try {
+    const old = await run("2026-11-22");
+    expect(Object.keys(old.seen.driver)).toEqual([]);
+    const { seen: out, reads, env } = await run(PROCESS_GLOBAL_DATE);
+    expect(out.app).toBe(out.driver); // one process for the whole bundle
+    expect(out.app.GREETING).toBe("hello");
+    // Text bindings only: not a KV namespace, not a JSON or numeric value.
+    expect(Object.keys(out.app).sort()).toEqual(["API_KEY", "GREETING", "UNSET"]);
+    expect(reads()).toBe(0); // a secret is still lazy
+    expect(out.app.API_KEY).toBe("s3cret");
+    expect(reads()).toBe(1);
+    expect(out.app.UNSET).toBeUndefined(); // an unset secret reads undefined instead of throwing
+    // Assigning is allowed, as in Workers, and does not change the bindings.
+    out.app.GREETING = "changed";
+    expect(env.GREETING).toBe("hello");
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }

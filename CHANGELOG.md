@@ -10,6 +10,36 @@ maintained going forward by the `release` skill.
 
 ## Unreleased
 
+## [0.62.0] - 2026-11-23
+
+New runtime: `@sproutboat/runtime` 0.49.2 (toolchain, wire and assets unchanged, 0.29.1, 0.23.0 and 0.3.2). Sproutboat Cloud's runtime generation is unchanged: 0.49.2 only changes the dev-only broker transport.
+
+### Changed
+
+- **Runtime 0.49.2.** `sproutboat dev` starts an app at `compatibility_date` 2026-11-20 or later again. The prelude asks for the acknowledgement gate from that date and only the embedded transport defined `__sbGateRaw`, so the app died at startup with `ReferenceError: __sbGateRaw is not defined`. The broker transport now defines it with the gate off.
+
+### Added
+
+- **`process` and `Buffer` for the app's own code from `compatibility_date` 2026-11-23, and `process.env` holds its vars and secrets.** Workers with `nodejs_compat` has a global `process`, and since `nodejs_compat_populate_process_env` (implied at 2025-04-01) its `process.env` is filled from the text bindings. The same now holds here. Before this date only dependency files in `node_modules/` got a `process` and `Buffer`, so a pre-bundled provider output (Alchemy's Effect bundle) that reads `process.platform` while it loads died at init with `Cannot get property of null`. From 2026-11-23 every project JS and TypeScript file that uses them gets the binding, and `process.env` mirrors the string `vars` and the secrets (a secret is still read on first use, and one that is not set reads `undefined`); KV, D1 and other bindings, and non-string values, are not in it, as in Workers. Earlier dates answer as before: dependency files get a `process` with an empty `env`, the handler's own code gets none.
+  This is a binding in each file that names `process`, not a property of `globalThis`: `typeof process` and `globalThis.process` in a file that never names `process` as a free identifier are still `undefined`.
+
+### Fixed
+
+- **A bundle at compatibility date 2026-11-17 or later can list `node:crypto`'s ciphers, hashes and curves while it loads.** The shim gains `getCiphers()`, `getHashes()` and `getCurves()` (empty lists). Effect's `NodeCrypto` layer calls `crypto.getCiphers().includes(…)` at load, and the missing function was inlined as `undefined`, which ended the app at init with a message-less `TypeError` (Alchemy).
+
+## [0.61.0] - 2026-11-23
+
+New runtime and toolchain: `@sproutboat/runtime` 0.49.1 and `@sproutboat/toolchain` 0.29.1 (wire and assets unchanged, 0.23.0 and 0.3.2). This is the runtime Sproutboat Cloud has run since 2026-11-23.
+
+### Changed
+
+- **Runtime 0.49.1.** Durable Object RPC reaches the method names an instance answers itself: a class whose constructor returns a Proxy (Alchemy's Durable Object bridge) no longer fails every stub call with "The RPC receiver does not implement the method". `WebSocketPair` is iterable (`const [client, server] = new WebSocketPair()`, as in workerd).
+- **Toolchain 0.29.1 (and 0.29.0).** The patched Porffor refuses its own intrinsics in compiled app code: a compile fails with `SB_INPUT_REFUSED` when a module other than the entry, the runtime or the shared prelude names `Porffor` or an intrinsic (`__Porffor_*`, `__<Builtin>_*`, `__ecma262_*`). The entry is trusted, so a standalone build of your own entry is unchanged. Rolldown's CommonJS interop helpers (`__toESMCache_node`, `__toESMCache_esm`) are not refused.
+
+### Fixed
+
+- **A compiled Alchemy v2 Worker no longer answers every request with 500.** Porffor patch P15 repeats the block function-order pass until it settles, so a function moved up no longer ends up behind a callee declared later (which was never compiled and threw a TypeError with no message).
+
 ## [0.60.0] - 2026-11-22
 
 New runtime and wire: `@sproutboat/runtime` 0.49.0, `@sproutboat/wire` 0.23.0 and `@sproutboat/assets` 0.3.2 (toolchain unchanged, 0.28.0). This is the runtime Sproutboat Cloud has run since 2026-11-22.
@@ -1928,7 +1958,8 @@ its own package.
 - Renamed the package to `sproutboat` (was `@sproutboat/cli`); dropped the
   `sprout` bin alias in favour of a user-defined shell alias.
 
-[Unreleased]: https://github.com/sproutboat/cli/compare/v0.60.0...HEAD
+[Unreleased]: https://github.com/sproutboat/cli/compare/v0.61.0...HEAD
+[0.61.0]: https://github.com/sproutboat/cli/compare/v0.60.0...v0.61.0
 [0.60.0]: https://github.com/sproutboat/cli/compare/v0.59.1...v0.60.0
 [0.59.1]: https://github.com/sproutboat/cli/compare/v0.59.0...v0.59.1
 [0.59.0]: https://github.com/sproutboat/cli/compare/v0.58.1...v0.59.0

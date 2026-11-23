@@ -66,26 +66,73 @@ const SHADOWED_BUILTIN_FUNCTIONS =
   /([=(:,?&|]\s*|\breturn\s+)function\s+(escape|unescape|eval|isNaN|isFinite|parseInt|parseFloat|encodeURI|encodeURIComponent|decodeURI|decodeURIComponent)\s*\(/g;
 
 /** What a driver reads off `process`: an empty environment and a microtask for nextTick. */
-const PROCESS_STUB = `
+/**
+ * From PROCESS_GLOBAL_DATE `process.env` holds the app's text bindings, as it does in Workers with `nodejs_compat` from
+ * `nodejs_compat_populate_process_env` (implied at compatibility date 2025-04-01): the string `vars` and the secrets, not
+ * KV, D1 or other bindings. The wrapper sets `globalThis.env` (with `vars` baked in and each secret a lazy accessor)
+ * before the handler's code runs, which is when this stub does, so it only mirrors them: a secret stays lazy, its value
+ * is fetched on first read exactly as `env.NAME` would, and a secret that is not set reads `undefined`.
+ */
+const POPULATE_PROCESS_ENV = `
+const source = globalThis.env;
+if (source !== undefined && source !== null) {
+  const names = Object.getOwnPropertyNames(source);
+  for (let i = 0; i < names.length; i++) {
+    const name = names[i];
+    const descriptor = Object.getOwnPropertyDescriptor(source, name);
+    if (descriptor !== undefined && descriptor.get !== undefined) {
+      Object.defineProperty(env, name, {
+        enumerable: true,
+        configurable: true,
+        get() { try { const value = source[name]; return typeof value === "string" ? value : undefined; } catch (e) { return undefined; } },
+        set(value) { Object.defineProperty(env, name, { value, writable: true, enumerable: true, configurable: true }); },
+      });
+    } else if (typeof source[name] === "string") {
+      env[name] = source[name];
+    }
+  }
+}`;
+
+const processStub = (populateEnv: boolean) => `
 const env = {};
+${populateEnv ? POPULATE_PROCESS_ENV : ""}
 function nextTick(fn, ...args) { Promise.resolve().then(() => fn(...args)); }
 const process = { env, platform: "linux", arch: "wasm32", version: "v20.0.0", versions: {}, argv: [], browser: true, nextTick, emitWarning() {}, cwd() { return "/"; }, stderr: { write() {} }, stdout: { write() {} }, on() {}, off() {}, once() {}, emit() {} };
 export default process;
 `;
 
 /**
+ * From this compatibility date the handler's own code gets `process` and `Buffer` like its dependencies do, and
+ * `process.env` holds its string `vars` and secrets. Workers has the same behaviour under `nodejs_compat`: a global
+ * `process` and, from `nodejs_compat_populate_process_env` (implied at 2025-04-01), `process.env` filled from the text
+ * bindings. Sproutboat has no `nodejs_compat` flag, so a compatibility date is the gate. Later than SOCKETS_DATE, which
+ * is when the source check stopped rejecting `process.x`.
+ */
+export const PROCESS_GLOBAL_DATE = "2026-11-23";
+
+const DEPENDENCY_FILES = /node_modules\/.*\.(?:c?js|mjs)$/;
+const APP_AND_DEPENDENCY_FILES = /\.(?:[cm]?[jt]s|[jt]sx)$/;
+const loaderOf = (file: string): "js" | "jsx" | "ts" | "tsx" =>
+  file.endsWith(".tsx") ? "tsx" : /\.[cm]?ts$/.test(file) ? "ts" : file.endsWith(".jsx") ? "jsx" : "js";
+
+/**
  * Node libraries use `Buffer` and `process` as free globals. Bun's browser target does not
  * inject them for a CommonJS file, so a dependency that never imports Buffer would throw a
  * ReferenceError at runtime. This gives every dependency file that uses one a local binding to the
  * bundled implementation (the `buffer` package, which Porffor compiles; see the toolchain notes on
- * typed array method dispatch). Applied only to node_modules, never to the handler's own code.
+ * typed array method dispatch). Before PROCESS_GLOBAL_DATE this is applied only to node_modules and the
+ * handler's own code gets none; from it every project file does, which is `process` and `Buffer` being globals
+ * as they are in Workers with `nodejs_compat`, and `process.env` holds the app's text bindings (POPULATE_PROCESS_ENV).
  */
-const nodeGlobalsPlugin: import("bun").BunPlugin = {
+const nodeGlobalsPlugin = (appOwned: boolean): import("bun").BunPlugin => ({
   name: "sproutboat-node-globals",
   setup(build) {
     build.onResolve({ filter: /^sb-node-process$/ }, () => ({ path: "sb-node-process", namespace: "sb-node-global" }));
-    build.onLoad({ filter: /.*/, namespace: "sb-node-global" }, () => ({ contents: PROCESS_STUB, loader: "js" }));
-    build.onLoad({ filter: /node_modules\/.*\.(?:c?js|mjs)$/ }, async (args) => {
+    build.onLoad({ filter: /.*/, namespace: "sb-node-global" }, () => ({
+      contents: processStub(appOwned),
+      loader: "js",
+    }));
+    build.onLoad({ filter: appOwned ? APP_AND_DEPENDENCY_FILES : DEPENDENCY_FILES }, async (args) => {
       const original = await Bun.file(args.path).text();
       const text = original.replace(
         SHADOWED_BUILTIN_FUNCTIONS,
@@ -102,7 +149,7 @@ const nodeGlobalsPlugin: import("bun").BunPlugin = {
       const usesGlobal =
         /(?:^|[^.\w$])global\s*\./m.test(text) && !/(?:const|let|var|function)\s+\{?\s*global\b/.test(text);
       if (!usesBuffer && !usesProcess && !usesGlobal)
-        return text === original ? undefined : { contents: text, loader: "js" };
+        return text === original ? undefined : { contents: text, loader: loaderOf(args.path) };
       const esm = /^\s*(?:import|export)\s/m.test(text);
       let prefix = "";
       if (usesBuffer) prefix += esm ? `import { Buffer } from "buffer";\n` : `var { Buffer } = require("buffer");\n`;
@@ -111,10 +158,10 @@ const nodeGlobalsPlugin: import("bun").BunPlugin = {
           ? `import process from "sb-node-process";\n`
           : `var process = require("sb-node-process").default;\n`;
       if (usesGlobal) prefix += "var global = globalThis;\n";
-      return { contents: prefix + text, loader: "js" };
+      return { contents: prefix + text, loader: loaderOf(args.path) };
     });
   },
-};
+});
 
 const socketShimSpecifiers = new RegExp(
   `^(${Object.keys(SOCKET_NODE_SHIMS)
@@ -153,6 +200,7 @@ export async function bundleHandler(
   // Node's free `Buffer`/`process`/`global` bound to bundled code, and net/tls/dns/fs/crypto shims
   // that name cloudflare:sockets when the driver takes its Node path.
   const sockets = options.compatibilityDate !== undefined && options.compatibilityDate >= SOCKETS_DATE;
+  const appOwnedGlobals = options.compatibilityDate !== undefined && options.compatibilityDate >= PROCESS_GLOBAL_DATE;
   let built: Awaited<ReturnType<typeof Bun.build>>;
   try {
     built = await Bun.build({
@@ -168,7 +216,7 @@ export async function bundleHandler(
       splitting: false,
       sourcemap: "none",
       conditions: sockets ? ["workerd", "worker"] : undefined,
-      plugins: sockets ? [nodeShimsPlugin, socketShimsPlugin, nodeGlobalsPlugin] : [nodeShimsPlugin],
+      plugins: sockets ? [nodeShimsPlugin, socketShimsPlugin, nodeGlobalsPlugin(appOwnedGlobals)] : [nodeShimsPlugin],
       // WorkerEntrypoint, DurableObject, RpcTarget and env are runtime globals; the
       // compiler turns this import into them, so it stays in the bundle as written.
       external: ["cloudflare:workers", "cloudflare:sockets"],
