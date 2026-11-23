@@ -113,7 +113,7 @@ export const PROCESS_GLOBAL_DATE = "2026-11-23";
 const DEPENDENCY_FILES = /node_modules\/.*\.(?:c?js|mjs)$/;
 const APP_AND_DEPENDENCY_FILES = /\.(?:[cm]?[jt]s|[jt]sx)$/;
 const loaderOf = (file: string): "js" | "jsx" | "ts" | "tsx" =>
-  /\.tsx$/.test(file) ? "tsx" : /\.[cm]?ts$/.test(file) ? "ts" : /\.jsx$/.test(file) ? "jsx" : "js";
+  file.endsWith(".tsx") ? "tsx" : /\.[cm]?ts$/.test(file) ? "ts" : file.endsWith(".jsx") ? "jsx" : "js";
 
 /**
  * Node libraries use `Buffer` and `process` as free globals. Bun's browser target does not
