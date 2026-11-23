@@ -298,3 +298,20 @@ test("a named function expression that shadows a global builtin function is rena
     rmSync(dir, { recursive: true, force: true });
   }
 });
+
+test("from the sockets date a bundle may list node:crypto's ciphers, hashes and curves at load time", async () => {
+  // Effect's NodeCrypto layer runs `crypto.getCiphers().includes("chacha20-poly1305")` while the module
+  // loads. The shim used to lack it, Bun inlined the missing export as `undefined`, and the call threw a
+  // message-less TypeError before the first request (Alchemy F6).
+  const dir = project({
+    "src/index.js": `import * as crypto from "node:crypto"; const chacha = crypto.getCiphers().includes("chacha20-poly1305"); export default { fetch() { return new Response(String(chacha) + crypto.getHashes().length + crypto.getCurves().length); } };`,
+  });
+  try {
+    const { code } = await bundleHandler(join(dir, "src/index.js"), dir, { compatibilityDate: "2026-11-17" });
+    expect(code).toContain("function getCiphers()");
+    expect(code).not.toMatch(/\bundefined\(\)/);
+    expect(validateHttpSyncSource(code, "2026-11-17")).toEqual({ ok: true });
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
