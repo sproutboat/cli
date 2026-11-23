@@ -4,7 +4,7 @@
 set -euo pipefail
 
 here="$(cd "$(dirname "$0")" && pwd)"
-repo="$(cd "$here/../../../../.." && pwd)"
+repo="$(cd "$here/../../../.." && pwd)"
 host="${1:-}"
 if [ -z "$host" ]; then
   echo "usage: $0 user@linux-host" >&2
