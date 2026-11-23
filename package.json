@@ -71,7 +71,7 @@
     "@sproutboat/artifact": "^0.3.0",
     "@sproutboat/assets": "^0.3.2",
     "@sproutboat/config": "^0.6.0",
-    "@sproutboat/runtime": "^0.49.1",
+    "@sproutboat/runtime": "^0.49.2",
     "@sproutboat/toolchain": "^0.29.1",
     "@sproutboat/wire": "0.23.0"
   },
