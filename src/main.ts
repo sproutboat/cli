@@ -1339,8 +1339,10 @@ async function deployCloud(args: string[], apiUrl: string, flags: ReturnType<typ
       console.log(`  ${dim(result.url ?? cert.host)}`);
       console.log(
         cert.state === "pending"
-          ? `  ${amber(`The HTTPS certificate for ${cert.host.split(".").slice(1).join(".")} is still being issued (a new team's first one takes about 2 minutes; this deploy waited ${Math.round(cert.waitedMs / 1000)} s). Try the address again in a minute or two.`)}`
-          : `  ${amber(`The HTTPS certificate for ${cert.host.split(".").slice(1).join(".")} could not be issued${cert.error ? `: ${cert.error}` : ""}. The Cloud retries on its own; if the address still fails in 15 minutes, tell the Sproutboat team.`)}`,
+          ? `  ${amber(`The HTTPS certificate for ${cert.host.split(".").slice(1).join(".")} is still being issued (a new team's first one takes about 3 minutes; this deploy waited ${Math.round(cert.waitedMs / 1000)} s). Try the address again in a minute or two.`)}`
+          : cert.state === "unchecked"
+            ? `  ${amber(`The deploy succeeded, but its HTTPS certificate could not be checked (${cert.error}). If the address fails the TLS handshake, try again in a few minutes.`)}`
+            : `  ${amber(`The HTTPS certificate for ${cert.host.split(".").slice(1).join(".")} could not be issued${cert.error ? `: ${cert.error}` : ""}. The Cloud retries on its own; if the address still fails in 15 minutes, tell the Sproutboat team.`)}`,
       );
     } else {
       console.log(`\n${leaf("🌱")} ${bold(leaf(`${result.created ? "Created" : "Updated"} ${name}`))}`);
@@ -2446,12 +2448,14 @@ async function deleteProject(args: string[]) {
     const arg = args[index];
     if (arg === "--yes" || arg === "-y" || arg === "--force" || arg === "-f") confirmed = true;
     else if (arg === "--name") explicitName = args[(index += 1)];
-    else if (arg === "--account") account = args[(index += 1)];
+    else if (arg === "--account") account = args[(index += 1)] ?? "";
     else if (arg.startsWith("--name=")) explicitName = arg.slice("--name=".length);
     else if (arg.startsWith("--account=")) account = arg.slice("--account=".length);
     else if (!arg.startsWith("-")) positional.push(arg);
     else usageError(`delete: unknown flag "${arg}"`, DELETE_USAGE);
   }
+  if (account !== undefined && (account === "" || account.startsWith("-")))
+    usageError("delete: --account needs a team name", DELETE_USAGE);
 
   const { apiUrl: targetUrl } = await resolveApiUrl();
   if ((await deployKind(targetUrl, false)) === "cloud") {

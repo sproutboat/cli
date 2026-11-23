@@ -198,7 +198,7 @@ export const COMMANDS: readonly Command[] = [
     args: "[project-dir] [--name <project>] [--account <team>] [--force | --yes | -y] [--api-url <url>]",
     brief: "[project-dir]",
     summary:
-      "Delete the project and its routes, as `wrangler delete` does: it asks first (default no), and --force, -f, --yes or -y skip the question (without a terminal one of them is required). On the Cloud it deletes the app of the project (or --name) from the team, which frees its slot at once; a key with only app:delete_own may delete only the apps that key created. On a self-hosted Community server it also removes every version.",
+      "Delete the project and its routes, as `wrangler delete` does. On the Cloud it asks first (default no) and --force, -f, --yes or -y skip the question (without a terminal one of them is required); on a self-hosted Community server it never asks and one of those flags is required. On the Cloud it deletes the app of the project (or --name) from the team, which frees its slot at once; a key with only app:delete_own may delete only the apps that key created. On a self-hosted Community server it also removes every version.",
   },
 
   ...storageCommands,

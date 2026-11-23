@@ -205,7 +205,8 @@ export type CloudDeployPlan = SpecExtras & {
  * Absent from a result when the Cloud reports nothing (an older Cloud, or a name that is not under the team wildcard).
  */
 export type CertOutcome = {
-  state: "ready" | "pending" | "failed";
+  /** unchecked: the Cloud could not be asked (the deploy itself succeeded). */
+  state: "ready" | "pending" | "failed" | "unchecked";
   host: string;
   /** Why it failed (the issuer's last output, cut), when it did. */
   error: string | null;
@@ -380,7 +381,13 @@ export async function waitForCertificate(
   let announced = false;
   let lastNote = started;
   for (;;) {
-    const reply = await call({ method: "GET", path: `/v1/apps/${plan.project}`, ok: [404] });
+    let reply: CallResult;
+    try {
+      reply = await call({ method: "GET", path: `/v1/apps/${plan.project}`, ok: [404] });
+    } catch (error) {
+      const why = error instanceof Error ? error.message : String(error);
+      return { state: "unchecked", host, error: why, waitedMs: Date.now() - started };
+    }
     const routes = Array.isArray(reply.body?.routes) ? reply.body.routes : [];
     const route = routes.map((entry) => jsonObject(entry)).find((entry) => entry?.key === host);
     const cert = jsonObject(route?.cert ?? null);
@@ -398,14 +405,16 @@ export async function waitForCertificate(
     if (!announced) {
       announced = true;
       io.log(
-        `  certificate  ordering the HTTPS certificate for *.${zone}; a new team's first one takes about 2 minutes (waiting up to ${Math.round((plan.certWaitMs ?? CERT_WAIT_MS) / 1000)} s)`,
+        `  certificate  ordering the HTTPS certificate for *.${zone}; a new team's first one takes about 3 minutes (waiting up to ${Math.round((plan.certWaitMs ?? CERT_WAIT_MS) / 1000)} s)`,
       );
     } else if (Date.now() - lastNote >= CERT_NOTE_EVERY_MS) {
       lastNote = Date.now();
       io.log(`  certificate  still being issued (${Math.round(waitedMs / 1000)} s)`);
     }
-    if (Date.now() >= deadline || signal?.aborted) return { state: "pending", host, error: null, waitedMs };
-    await io.sleep(plan.certPollMs ?? 3000);
+    if (signal?.aborted)
+      throw new Interrupted(`interrupted; the app is live, its certificate for *.${zone} is still being issued`);
+    if (Date.now() >= deadline) return { state: "pending", host, error: null, waitedMs };
+    await io.sleep(Math.min(plan.certPollMs ?? 3000, Math.max(0, deadline - Date.now())));
   }
 }
 

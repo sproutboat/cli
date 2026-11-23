@@ -17,12 +17,15 @@ import {
   parseBuildView,
   parseSseFrames,
   type BuildPlan,
+  waitForCertificate,
 } from "./cloud-deploy";
 import type { JsonObject } from "./json";
 import { FAKE_KEY, startFakeCloud, type FakeOptions } from "./cloud-fake";
 
 const MiB = 1048576;
 const sha256 = (text: string) => createHash("sha256").update(text).digest("hex");
+
+type CertCall = Parameters<typeof waitForCertificate>[0];
 
 function fakeIo(overrides: Partial<CloudIo> = {}) {
   const lines: string[] = [];
@@ -176,7 +179,7 @@ describe("buildAndDeploy", () => {
       expect(result.certificate).toMatchObject({ state: "ready", host: "hello.acme.sproutboat.app" });
       expect(lines.filter((l) => l.includes("certificate"))).toHaveLength(2);
       expect(lines.find((l) => l.includes("ordering the HTTPS certificate for *.acme.sproutboat.app"))).toContain(
-        "about 2 minutes",
+        "about 3 minutes",
       );
       expect(lines.at(-1)).toContain("certificate  ready for *.acme.sproutboat.app");
     });
@@ -197,6 +200,40 @@ describe("buildAndDeploy", () => {
       expect(result.certificate).toMatchObject({ state: "failed", error: "dns timeout" });
       expect(lines.some((l) => l.includes("ordering the HTTPS certificate"))).toBe(false);
     });
+  });
+
+  test("a certificate check that errors keeps the deploy a success and says it could not check", async () => {
+    const call: CertCall = async () => {
+      throw new Error("network down");
+    };
+    const out = await waitForCertificate(call, { project: "hello" }, "hello.acme.sproutboat.app", fakeIo().io);
+    expect(out).toMatchObject({ state: "unchecked", error: "network down" });
+  });
+
+  test("Ctrl-C while waiting for the certificate is an interruption, and no sleep outlasts the wait budget", async () => {
+    const pending: CertCall = async () => ({
+      status: 200,
+      text: "",
+      headers: new Headers(),
+      body: {
+        routes: [{ key: "hello.acme.sproutboat.app", kind: "platform", cert: { state: "pending", error: null } }],
+      },
+    });
+    const controller = new AbortController();
+    controller.abort();
+    await expect(
+      waitForCertificate(pending, { project: "hello" }, "hello.acme.sproutboat.app", fakeIo().io, controller.signal),
+    ).rejects.toBeInstanceOf(Interrupted);
+    const slept: number[] = [];
+    const { io } = fakeIo({ sleep: async (ms) => void slept.push(ms) });
+    const out = await waitForCertificate(
+      pending,
+      { project: "hello", certWaitMs: 20, certPollMs: 60_000 },
+      "hello.acme.sproutboat.app",
+      io,
+    );
+    expect(out?.state).toBe("pending");
+    expect(Math.max(...slept)).toBeLessThanOrEqual(20);
   });
 
   test("a Cloud that says nothing about the certificate is not waited on", async () => {
