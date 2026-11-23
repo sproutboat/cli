@@ -10,6 +10,10 @@ export type TailFormat = "pretty" | "json";
 
 export type TailArgs = {
   dir: string | undefined;
+  /** `--name`: the project to tail, so it works outside its directory (Cloud). */
+  name: string | undefined;
+  /** `--account`: the team the key acts for (Cloud). */
+  account: string | undefined;
   format: TailFormat;
   recent: boolean;
   sprout: boolean;
@@ -21,6 +25,8 @@ export type TailArgs = {
   /** #268: follow a standalone binary's SB_LOG=json records in this file ("-" for stdin) instead of the control plane. */
   file: string | undefined;
   lines: number;
+  /** Whether --lines was given (--recent has its own default). */
+  linesSet: boolean;
   follow: boolean;
 };
 
@@ -47,7 +53,7 @@ export type TailFrame =
   | { type: "closed"; reason: string };
 
 export const TAIL_USAGE =
-  "tail [project-dir] [--format pretty|json] [--status ok|error|<code>|5xx] [--method GET,POST] [--sampling-rate 0.1] [--search <text>] [--outcome <name>] | tail --recent | tail --sprout | tail --file <log|-> [--lines <n>] [--no-follow] [--format pretty|json] [--status <s>] [--method <m>] [--search <text>]";
+  "tail [project-dir] [--format pretty|json] [--status ok|error|<code>|5xx] [--method GET,POST] [--sampling-rate 0.1] [--search <text>] [--outcome <name>] | tail --recent [--lines <n>] | tail --sprout | tail --file <log|-> [--lines <n>] [--no-follow] [--format pretty|json] [--status <s>] [--method <m>] [--search <text>]";
 
 const VALUE_FLAGS = [
   "--format",
@@ -58,12 +64,18 @@ const VALUE_FLAGS = [
   "--outcome",
   "--file",
   "--lines",
+  "--name",
+  "--account",
 ] as const;
 const MAX_LINES = 100_000;
+/** The Cloud's /logs route answers at most this many lines. */
+export const RECENT_MAX_LINES = 1000;
 
 export function parseTailArgs(args: string[]): { args: TailArgs } | { error: string } {
   const parsed: TailArgs = {
     dir: undefined,
+    name: undefined,
+    account: undefined,
     format: "pretty",
     recent: false,
     sprout: false,
@@ -74,6 +86,7 @@ export function parseTailArgs(args: string[]): { args: TailArgs } | { error: str
     outcome: [],
     file: undefined,
     lines: 10,
+    linesSet: false,
     follow: true,
   };
   let linesGiven = false;
@@ -102,11 +115,14 @@ export function parseTailArgs(args: string[]): { args: TailArgs } | { error: str
       else if (flag === "--outcome") parsed.outcome.push(...split(value));
       else if (flag === "--sampling-rate") parsed.samplingRate = value;
       else if (flag === "--file") parsed.file = value;
+      else if (flag === "--name") parsed.name = value;
+      else if (flag === "--account") parsed.account = value;
       else if (flag === "--lines") {
         const lines = Number(value);
         if (value.trim() === "" || !Number.isInteger(lines) || lines < 0 || lines > MAX_LINES)
           return { error: `tail: --lines must be a whole number from 0 to ${MAX_LINES} (got "${value}")` };
         parsed.lines = lines;
+        parsed.linesSet = true;
         linesGiven = true;
       } else parsed.search = value;
     } else if (parsed.dir === undefined) parsed.dir = arg;
@@ -115,7 +131,9 @@ export function parseTailArgs(args: string[]): { args: TailArgs } | { error: str
   const filtered =
     parsed.status.length || parsed.method.length || parsed.outcome.length || parsed.samplingRate || parsed.search;
   if (parsed.file === undefined) {
-    if (linesGiven) return { error: "tail: --lines needs --file" };
+    if (linesGiven && !parsed.recent && !parsed.sprout) return { error: "tail: --lines needs --file or --recent" };
+    if (linesGiven && parsed.lines > RECENT_MAX_LINES)
+      return { error: `tail: --recent shows at most ${RECENT_MAX_LINES} lines (got ${parsed.lines})` };
     if (!parsed.follow) return { error: "tail: --no-follow needs --file" };
   } else {
     if (parsed.recent || parsed.sprout) return { error: "tail: --file is an alternative to --recent and --sprout" };
@@ -314,6 +332,8 @@ export type RunTailOptions = {
   /** First delay after a failed connection; doubles up to 8 seconds. */
   retryMs?: number;
   maxFailures?: number;
+  /** Turns a refusal into the message to print (a final error), or undefined to use the default one. */
+  explain?: (status: number, body: JsonObject | undefined) => string | undefined;
   /** Reconnect if the server sends nothing (not even a keepalive) for this long. */
   idleMs?: number;
   fetchFn?: typeof fetch;
@@ -369,6 +389,8 @@ export async function runTail(options: RunTailOptions): Promise<void> {
       });
       if (!response.ok || !response.body) {
         const detail = await response.text().catch(() => "");
+        const explained = options.explain?.(response.status, parseJsonObject(detail));
+        if (explained !== undefined) throw new TailError(explained, response.status);
         if (response.status >= 400 && response.status < 500 && response.status !== 408 && response.status !== 429)
           throw new TailError(
             response.status === 404
@@ -413,6 +435,14 @@ export async function runTail(options: RunTailOptions): Promise<void> {
       options.signal.removeEventListener("abort", stop);
       attempt.abort();
     }
+  }
+}
+
+function parseJsonObject(text: string): JsonObject | undefined {
+  try {
+    return jsonObject(parseJsonValue(text));
+  } catch {
+    return undefined;
   }
 }
 

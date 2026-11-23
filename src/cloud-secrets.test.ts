@@ -293,10 +293,15 @@ describe("the CLI end to end", () => {
   test("secrets put, list and delete work against a deployed Cloud app", async () => {
     await withCloud({ appExists: true, teamKey: true }, async (cloud) => {
       const put = await run(["secrets", "put", "ADMIN_TOKEN", project], env(cloud.url), "hunter2\n");
-      expect(put.stderr).toBe("");
+      // 7 characters: the runtime logs hide a secret value only from 8, and the put says so (by name, never the value).
+      expect(put.stderr).toContain("ADMIN_TOKEN is shorter than 8 characters");
+      expect(put.stderr).not.toContain("hunter2");
       expect(put.code).toBe(0);
       expect(put.stdout).toContain("set ADMIN_TOKEN on hello");
       expect(cloud.secrets).toEqual({ ADMIN_TOKEN: "hunter2" });
+      const long = await run(["secrets", "put", "LONG_TOKEN", project], env(cloud.url), "hunter2-and-more\n");
+      expect(long.stderr).toBe("");
+      await run(["secrets", "delete", "LONG_TOKEN", project], env(cloud.url));
       const list = await run(["secrets", "list", project], env(cloud.url));
       expect(list.stdout.trim()).toBe("ADMIN_TOKEN");
       const del = await run(["secrets", "delete", "ADMIN_TOKEN", project], env(cloud.url));
