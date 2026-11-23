@@ -168,6 +168,60 @@ describe("buildAndDeploy", () => {
     });
   });
 
+  test("a first deploy waits for the team certificate before it says the address is ready, with a progress line", async () => {
+    await withCloud({ certStates: ["pending", "pending", "ready"] }, async (cloud) => {
+      const { io, lines } = fakeIo();
+      const result = await buildAndDeploy(plan(cloud.url, { certPollMs: 1 }), io);
+      expect(result.applied).toBe(true);
+      expect(result.certificate).toMatchObject({ state: "ready", host: "hello.acme.sproutboat.app" });
+      expect(lines.filter((l) => l.includes("certificate"))).toHaveLength(2);
+      expect(lines.find((l) => l.includes("ordering the HTTPS certificate for *.acme.sproutboat.app"))).toContain(
+        "about 2 minutes",
+      );
+      expect(lines.at(-1)).toContain("certificate  ready for *.acme.sproutboat.app");
+    });
+  });
+
+  test("a certificate still pending at the deadline is reported, not waited on forever", async () => {
+    await withCloud({ certStates: ["pending"] }, async (cloud) => {
+      const result = await buildAndDeploy(plan(cloud.url, { certWaitMs: 30, certPollMs: 1 }), fakeIo().io);
+      expect(result.certificate).toMatchObject({ state: "pending", host: "hello.acme.sproutboat.app" });
+      expect(result.certificate!.waitedMs).toBeGreaterThanOrEqual(30);
+    });
+  });
+
+  test("a failed certificate is reported at once with the reason, without waiting", async () => {
+    await withCloud({ certStates: ["failed"] }, async (cloud) => {
+      const { io, lines } = fakeIo();
+      const result = await buildAndDeploy(plan(cloud.url, { certWaitMs: 60_000, certPollMs: 1 }), io);
+      expect(result.certificate).toMatchObject({ state: "failed", error: "dns timeout" });
+      expect(lines.some((l) => l.includes("ordering the HTTPS certificate"))).toBe(false);
+    });
+  });
+
+  test("a Cloud that says nothing about the certificate is not waited on", async () => {
+    await withCloud({}, async (cloud) => {
+      const result = await buildAndDeploy(plan(cloud.url), fakeIo().io);
+      expect(result.certificate).toBeUndefined();
+    });
+  });
+
+  test("a new app over the app limit stops before the first upload, with the Cloud's own message", async () => {
+    const message =
+      "Free alpha limit: 5 apps per account, and you have 5. Delete one first. Ask for more at support@sproutboat.com.";
+    await withCloud({ appLimitMessage: message }, async (cloud) => {
+      await expect(buildAndDeploy(plan(cloud.url), fakeIo().io)).rejects.toThrow(message);
+      expect(cloud.sources.size).toBe(0);
+      expect(cloud.calls.filter((c) => c.method === "PUT" || c.method === "POST")).toEqual([]);
+    });
+    // An update of an app that already exists is not a new app: the preflight is not even asked.
+    await withCloud({ appLimitMessage: message, appExists: true }, async (cloud) => {
+      await buildAndDeploy(plan(cloud.url), fakeIo().io);
+      expect(cloud.calls.some((c) => c.path === "/v1/limits")).toBe(false);
+    });
+    // The Cloud's own refusal at submit (a CLI preflight that could not run) is printed as it is too.
+  });
+
   test("a deploy from source keeps the routes an operator added", async () => {
     const live = ["hello.acme.sproutboat.app", "risulta.dev"];
     await withCloud({ existingHosts: live }, async (cloud) => {

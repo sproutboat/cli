@@ -65,9 +65,11 @@ import {
 import {
   buildAndDeploy,
   buildAssetBundle,
+  type CertOutcome,
   checkServiceBindings,
   CLOUD_PROJECT_RE,
   compileModule,
+  deleteCloudApp,
   deployToCloud,
   formatKiB,
   hostFor,
@@ -1321,14 +1323,31 @@ async function deployCloud(args: string[], apiUrl: string, flags: ReturnType<typ
     routes: string[];
     applied: boolean | "skipped";
     buildId?: string;
+    certificate?: CertOutcome;
   }) => {
     if (result.generation === undefined) {
       console.log(`\n${leaf("🌱")} ${bold(leaf(`Build queued for ${name}`))}`);
       console.log(dim(`  status  ${apiUrl}/v1/builds/${result.buildId}`));
       return;
     }
-    console.log(`\n${leaf("🌱")} ${bold(leaf(`${result.created ? "Created" : "Updated"} ${name}`))}`);
-    if (result.url) {
+    const cert = result.certificate && result.certificate.state !== "ready" ? result.certificate : undefined;
+    if (cert) {
+      // The app is live, but its address fails the TLS handshake until the team certificate is installed: never present it as ready.
+      console.log(
+        `\n${amber(`! ${result.created ? "Created" : "Updated"} ${name}, but its address is not ready yet`)}`,
+      );
+      console.log(`  ${dim(result.url ?? cert.host)}`);
+      console.log(
+        cert.state === "pending"
+          ? `  ${amber(`The HTTPS certificate for ${cert.host.split(".").slice(1).join(".")} is still being issued (a new team's first one takes about 2 minutes; this deploy waited ${Math.round(cert.waitedMs / 1000)} s). Try the address again in a minute or two.`)}`
+          : `  ${amber(`The HTTPS certificate for ${cert.host.split(".").slice(1).join(".")} could not be issued${cert.error ? `: ${cert.error}` : ""}. The Cloud retries on its own; if the address still fails in 15 minutes, tell the Sproutboat team.`)}`,
+      );
+    } else {
+      console.log(`\n${leaf("🌱")} ${bold(leaf(`${result.created ? "Created" : "Updated"} ${name}`))}`);
+    }
+    if (cert) {
+      // the address is in the warning above
+    } else if (result.url) {
       console.log(`  ${bold(result.url)}`);
     } else {
       // The routes the deploy read before it started can be stale by now (a build takes minutes), so ask the Cloud again.
@@ -1360,6 +1379,7 @@ async function deployCloud(args: string[], apiUrl: string, flags: ReturnType<typ
     try {
       const result = await buildAndDeploy(
         {
+          ...certWaitFromEnv(),
           apiUrl,
           token: session!.token,
           tokenFromEnv,
@@ -1393,6 +1413,7 @@ async function deployCloud(args: string[], apiUrl: string, flags: ReturnType<typ
   try {
     const result = await deployToCloud(
       {
+        ...certWaitFromEnv(),
         apiUrl,
         token: session!.token,
         tokenFromEnv,
@@ -1413,6 +1434,17 @@ async function deployCloud(args: string[], apiUrl: string, flags: ReturnType<typ
   } finally {
     if (compiled) rmSync(modulePath!, { force: true });
   }
+}
+
+/** SPROUTBOAT_CERT_WAIT_MS / SPROUTBOAT_CERT_POLL_MS: how long a deploy waits for a new team's HTTPS certificate (default 180000 and 3000). 0 stops the wait. */
+function certWaitFromEnv() {
+  const read = (name: string) => {
+    const value = Number(process.env[name]);
+    return process.env[name] !== undefined && process.env[name] !== "" && Number.isFinite(value) && value >= 0
+      ? value
+      : undefined;
+  };
+  return { certWaitMs: read("SPROUTBOAT_CERT_WAIT_MS"), certPollMs: read("SPROUTBOAT_CERT_POLL_MS") };
 }
 
 async function apiCredentials(explicitApiUrl?: string) {
@@ -2391,21 +2423,68 @@ async function kvContents(args: string[]): Promise<void> {
   console.log(ok(`exported ${namespace} to ${output}`));
 }
 
+/** A yes/no that defaults to no (Wrangler's delete asks the same way); anything but y or yes is a no. */
+async function confirmDefaultNo(question: string): Promise<boolean> {
+  const { createInterface } = await import("node:readline/promises");
+  const rl = createInterface({ input: process.stdin, output: process.stderr });
+  try {
+    return /^y(es)?$/i.test((await rl.question(`${question} [y/N] `)).trim());
+  } finally {
+    rl.close();
+  }
+}
+
+const DELETE_USAGE = "delete [project-dir] [--name <project>] [--account <team>] [--force | --yes | -y]";
+
 async function deleteProject(args: string[]) {
+  // `sproutboat delete [project-dir] [--name <project>] [--force]`, flags in any order. --force, -f, --yes and -y all skip the question.
   const positional: string[] = [];
   let confirmed = false;
   let explicitName: string | undefined;
+  let account: string | undefined;
   for (let index = 0; index < args.length; index += 1) {
     const arg = args[index];
-    if (arg === "--yes" || arg === "-y") confirmed = true;
+    if (arg === "--yes" || arg === "-y" || arg === "--force" || arg === "-f") confirmed = true;
     else if (arg === "--name") explicitName = args[(index += 1)];
+    else if (arg === "--account") account = args[(index += 1)];
+    else if (arg.startsWith("--name=")) explicitName = arg.slice("--name=".length);
+    else if (arg.startsWith("--account=")) account = arg.slice("--account=".length);
     else if (!arg.startsWith("-")) positional.push(arg);
-    else usageError(`delete: unknown flag "${arg}"`, "delete [project-dir] [--name <project>] --yes");
+    else usageError(`delete: unknown flag "${arg}"`, DELETE_USAGE);
+  }
+
+  const { apiUrl: targetUrl } = await resolveApiUrl();
+  if ((await deployKind(targetUrl, false)) === "cloud") {
+    const project = explicitName === undefined ? await readProjectConfig(positional[0]) : undefined;
+    const app = explicitName ?? project!.config.name;
+    if (!confirmed) {
+      const interactive = Boolean(process.stdin.isTTY && process.stdout.isTTY);
+      if (!interactive)
+        fail(`this permanently deletes "${app}", its routes and its data; re-run with --force (or -y) to confirm`);
+      if (
+        !(await confirmDefaultNo(
+          `Delete "${app}"? This permanently removes the app and its routes and cannot be undone.`,
+        ))
+      ) {
+        console.log("not deleted");
+        return;
+      }
+    }
+    await guard(async () => {
+      const credentials = await cloudCredentials(targetUrl, account ?? project?.account);
+      if (await deleteCloudApp(credentials, app))
+        console.log(ok(`deleted ${app}; it stops serving within a few seconds, and its slot is free again`));
+      else
+        fail(
+          `${app} is not deployed on this team (nothing to delete); check the name with: sproutboat deployments list`,
+        );
+    });
+    return;
   }
 
   const { apiUrl, token } = await apiCredentials();
   const name = explicitName ?? (await readProjectConfig(positional[0])).config.name;
-  if (!confirmed) fail(`this permanently removes "${name}", every version, and its route — re-run with --yes`);
+  if (!confirmed) fail(`this permanently removes "${name}", every version, and its route; re-run with --force (or -y)`);
 
   const url = `${apiUrl}/api/projects/${encodeURIComponent(name)}?confirm=${encodeURIComponent(name)}`;
   const body = await responseText(
