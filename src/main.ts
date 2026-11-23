@@ -178,7 +178,7 @@ import {
   recentCloudLogs,
   shortSecretWarnings,
 } from "./cloud-logs";
-import { parseTailArgs, runTail, TAIL_USAGE, tailQuery, type TailArgs } from "./tail";
+import { parseTailArgs, runTail, TAIL_USAGE, TailError, tailQuery, type TailArgs } from "./tail";
 import { followLog, LogFilter, readLogStream } from "./tail-log";
 import { EnvFileError, MissingSecretsError } from "./env-file";
 import { parseRunArgs, planRun, RUN_USAGE, RunError } from "./run";
@@ -1702,12 +1702,17 @@ async function cloudTail(parsed: TailArgs, targetUrl: string) {
   for (const signal of ["SIGINT", "SIGTERM"] as const) process.once(signal, () => controller.abort());
   process.stdout.on("error", () => controller.abort());
   const request = cloudTailRequest(credentials, app, tailQuery(parsed));
-  await runTail({
-    ...request,
-    format: parsed.format,
-    signal: controller.signal,
-    explain: (status, body) => explainTailRefusal(app, status, body),
-  });
+  try {
+    await runTail({
+      ...request,
+      format: parsed.format,
+      signal: controller.signal,
+      explain: (status, body) => explainTailRefusal(app, status, body),
+    });
+  } catch (error) {
+    if (error instanceof TailError) fail(error.message);
+    throw error;
+  }
 }
 
 type DomainView = {

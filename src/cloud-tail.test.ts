@@ -107,6 +107,7 @@ async function run(args: string[], opts: { kill?: boolean } = {}) {
     cwd: dir,
     env: {
       ...process.env,
+      SPROUTBOAT_ACCOUNT: "acme",
       SPROUTBOAT_API_URL: `http://127.0.0.1:${server.port}`,
       SPROUTBOAT_API_TOKEN: KEY,
       SPROUTBOAT_NO_UPDATE_CHECK: "1",
@@ -193,6 +194,7 @@ test("refusals are clear and final: 403 names logs:read, 404 says to deploy, 429
     const live = await run(["--name", "blog"]);
     expect(live.code, m).toBe(1);
     expect(live.err, m).toContain(words);
+    expect(live.err, m).not.toMatch(/TailError|\n\s+at /);
     expect(attempts, m).toBe(0);
     if (m !== "viewers") {
       const recent = await run(["--name", "blog", "--recent"]);
@@ -201,6 +203,9 @@ test("refusals are clear and final: 403 names logs:read, 404 says to deploy, 429
     }
   }
   mode = "ok";
+  const tooMany = await run(["--name", "blog", "--recent", "--lines", "1001"]);
+  expect(tooMany.code).not.toBe(0);
+  expect(tooMany.err).toContain("at most 1000 lines");
 });
 
 test("explainTailRefusal: what is final and what is left to the reconnect loop", () => {

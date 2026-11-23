@@ -68,6 +68,8 @@ const VALUE_FLAGS = [
   "--account",
 ] as const;
 const MAX_LINES = 100_000;
+/** The Cloud's /logs route answers at most this many lines. */
+export const RECENT_MAX_LINES = 1000;
 
 export function parseTailArgs(args: string[]): { args: TailArgs } | { error: string } {
   const parsed: TailArgs = {
@@ -130,6 +132,8 @@ export function parseTailArgs(args: string[]): { args: TailArgs } | { error: str
     parsed.status.length || parsed.method.length || parsed.outcome.length || parsed.samplingRate || parsed.search;
   if (parsed.file === undefined) {
     if (linesGiven && !parsed.recent && !parsed.sprout) return { error: "tail: --lines needs --file or --recent" };
+    if (linesGiven && parsed.lines > RECENT_MAX_LINES)
+      return { error: `tail: --recent shows at most ${RECENT_MAX_LINES} lines (got ${parsed.lines})` };
     if (!parsed.follow) return { error: "tail: --no-follow needs --file" };
   } else {
     if (parsed.recent || parsed.sprout) return { error: "tail: --file is an alternative to --recent and --sprout" };
