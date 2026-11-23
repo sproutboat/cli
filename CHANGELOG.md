@@ -1977,7 +1977,8 @@ its own package.
 - Renamed the package to `sproutboat` (was `@sproutboat/cli`); dropped the
   `sprout` bin alias in favour of a user-defined shell alias.
 
-[Unreleased]: https://github.com/sproutboat/cli/compare/v0.61.0...HEAD
+[Unreleased]: https://github.com/sproutboat/cli/compare/v0.63.0...HEAD
+[0.63.0]: https://github.com/sproutboat/cli/compare/v0.62.0...v0.63.0
 [0.61.0]: https://github.com/sproutboat/cli/compare/v0.60.0...v0.61.0
 [0.60.0]: https://github.com/sproutboat/cli/compare/v0.59.1...v0.60.0
 [0.59.1]: https://github.com/sproutboat/cli/compare/v0.59.0...v0.59.1
