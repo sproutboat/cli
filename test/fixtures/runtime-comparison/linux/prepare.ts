@@ -1,14 +1,18 @@
 import { createHash } from "node:crypto";
-import { cpSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, cpSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { execFileSync } from "node:child_process";
 import { buildStandalone } from "../../../../src/standalone-build";
 import { bundleHandler } from "../../../../src/bundle";
-import { ensurePorffor, PORFFOR_COMMIT_FULL } from "../../../../src/porffor-toolchain";
+import {
+  CURRENT_ALPHA,
+  ensurePorfforA21,
+  PORFFOR_A25_COMMIT_FULL as PORFFOR_COMMIT_FULL,
+} from "@sproutboat/toolchain/a21";
 import { corpus } from "../fixtures/corpus";
 import { preludePath } from "../../../../src/wrap";
 const here = resolve(import.meta.dir, "..");
-const repo = resolve(here, "../../../..");
+const repo = resolve(here, "../../..");
 const tag = execFileSync("git", ["describe", "--exact-match", "--tags", "HEAD"], {
   cwd: repo,
   encoding: "utf8",
@@ -23,18 +27,7 @@ const cliVersion = JSON.parse(readFileSync(join(repo, "package.json"), "utf8")).
 if (tag !== `v${cliVersion}`) throw new Error(`Tag ${tag} does not match CLI package version ${cliVersion}`);
 const out = join(here, "results", "linux-payload-" + Date.now());
 mkdirSync(out, { recursive: true });
-const compiler = await ensurePorffor();
-// Patch an isolated compiler copy for loopback ingress. Never modify the
-// installed compiler cache: subsequent tagged runs must start from the same pin.
-const isolated = join(out, "compiler");
-cpSync(compiler, isolated, { recursive: true });
-const shim = join(isolated, "compiler/uwebsockets.js");
-const source = readFileSync(shim, "utf8");
-const anchor = "  }).listen(port, [&listened, port](auto* token) {";
-const loopback = '  }).listen("127.0.0.1", port, [&listened, port](auto* token) {';
-if (!source.includes(anchor) && !source.includes(loopback)) throw new Error("Native loopback bind anchor missing");
-if (source.includes(anchor)) writeFileSync(shim, source.replace(anchor, loopback));
-process.env.SPROUTBOAT_PORFFOR_DIR = isolated;
+const isolated = await ensurePorfforA21(CURRENT_ALPHA);
 const entry = join(here, "adapters/sproutboat.js");
 const bundle = await bundleHandler(entry, here);
 const upstreamPort = 18081;
@@ -56,7 +49,6 @@ const built = await buildStandalone({
   outputDirectory: join(out, "artifact"),
 });
 const buildMs = performance.now() - started;
-delete process.env.SPROUTBOAT_PORFFOR_DIR;
 cpSync(join(here, "fixtures"), join(out, "fixtures"), { recursive: true });
 cpSync(join(here, "adapters"), join(out, "adapters"), { recursive: true });
 cpSync(join(import.meta.dir, "measure.py"), join(out, "measure.py"));
@@ -66,15 +58,15 @@ const worker = await bundleHandler(join(here, "adapters/workerd.js"), here);
 writeFileSync(join(out, "worker.js"), worker.code);
 const hashes: Record<string, string> = {};
 for (const file of [
-  "compiler/uwebsockets.js",
   "compiler/render.js",
   "compiler/builtins/json.ts",
   "compiler/builtins_precompiled.js",
   "runtime/fetch-globals.js",
 ])
-  hashes[file] = createHash("sha256")
-    .update(readFileSync(join(isolated, file)))
-    .digest("hex");
+  if (existsSync(join(isolated, file)))
+    hashes[file] = createHash("sha256")
+      .update(readFileSync(join(isolated, file)))
+      .digest("hex");
 const packages: Record<string, string> = {};
 for (const name of ["runtime", "toolchain", "wire"])
   packages[name] = JSON.parse(readFileSync(Bun.resolveSync(`@sproutboat/${name}/package.json`, here), "utf8")).version;
@@ -108,12 +100,11 @@ writeFileSync(
       binaryHash: createHash("sha256").update(readFileSync(built.outPath)).digest("hex"),
       buildMs,
       upstreamPort,
-      loopbackBind: true,
+      loopbackBind: false,
       target: "linux-x86_64",
     },
     null,
     2,
   ),
 );
-rmSync(isolated, { recursive: true, force: true });
 console.log(`Prepared Linux payload: ${out}`);
