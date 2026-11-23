@@ -194,6 +194,24 @@ export type CloudDeployPlan = SpecExtras & {
   noWait: boolean;
   waitMs?: number;
   pollMs?: number;
+  /** Milliseconds to wait for the team's HTTPS certificate once the app is live (default 3 minutes). */
+  certWaitMs?: number;
+  certPollMs?: number;
+};
+
+/**
+ * The state of the HTTPS certificate behind the printed URL, when the Cloud says. A team's first certificate (a wildcard for
+ * <team>.sproutboat.app, ordered over DNS) takes about two minutes; until it is installed the URL fails the TLS handshake.
+ * Absent from a result when the Cloud reports nothing (an older Cloud, or a name that is not under the team wildcard).
+ */
+export type CertOutcome = {
+  /** unchecked: the Cloud could not be asked (the deploy itself succeeded). */
+  state: "ready" | "pending" | "failed" | "unchecked";
+  host: string;
+  /** Why it failed (the issuer's last output, cut), when it did. */
+  error: string | null;
+  /** How long this deploy waited for it. */
+  waitedMs: number;
 };
 
 export type CloudDeployResult = {
@@ -202,6 +220,7 @@ export type CloudDeployResult = {
   url: string | undefined;
   routes: string[];
   applied: boolean | "skipped";
+  certificate?: CertOutcome;
 };
 
 type SpecAdditions = {
@@ -274,6 +293,22 @@ async function sendWithHosts(
   return call(request({ hosts: routesAfter(live, wanted, unroute) }));
 }
 
+/**
+ * A new app over the team's app limit is refused by the Cloud when the build is submitted, but by then the source and the assets are uploaded.
+ * `GET /v1/limits` says up front (`new_app_refusal`, with the Cloud's own message), so stop before the first upload. A Cloud without the field,
+ * a key that cannot read limits, or any trouble reading them: carry on, the write decides.
+ */
+async function refuseIfOverAppLimit(call: CallFn): Promise<void> {
+  let reply: CallResult;
+  try {
+    reply = await call({ method: "GET", path: "/v1/limits", ok: [401, 403, 404, 429, 500, 502, 503] });
+  } catch {
+    return;
+  }
+  const refusal = reply.status === 200 ? jsonObject(reply.body?.new_app_refusal ?? null) : null;
+  if (refusal && isString(refusal.message)) throw new CloudError(refusal.message);
+}
+
 async function resolveAssets(
   call: CallFn,
   plan: { project: string; assets?: AssetBundle },
@@ -281,6 +316,7 @@ async function resolveAssets(
 ): Promise<{ created: boolean; assetsRef: string | undefined; hosts: string[] }> {
   const current = await call({ method: "GET", path: `/v1/apps/${plan.project}`, ok: [404] });
   const created = current.status === 404;
+  if (created) await refuseIfOverAppLimit(call);
   const live = jsonObject(current.body?.spec ?? null)?.hosts;
   const hosts = Array.isArray(live) ? live.filter(isString) : [];
   let assetsRef: string | undefined;
@@ -324,6 +360,64 @@ export async function waitForApply(
   }
 }
 
+export const CERT_WAIT_MS = 180_000;
+const CERT_NOTE_EVERY_MS = 30_000;
+
+/**
+ * After the app is live: is the HTTPS certificate of its platform name installed? `GET /v1/apps/<app>` carries `routes[].cert` (pending, ready or
+ * failed for a name under the team wildcard). Pending is waited for, up to `certWaitMs`, with a short progress line; failed is not (the issuer
+ * retries after at least 10 minutes). Anything else the Cloud says, or nothing, is "no information": returns undefined and prints nothing.
+ */
+export async function waitForCertificate(
+  call: CallFn,
+  plan: { project: string; certWaitMs?: number; certPollMs?: number },
+  host: string,
+  io: CloudIo,
+  signal?: AbortSignal,
+): Promise<CertOutcome | undefined> {
+  const started = Date.now();
+  const deadline = started + (plan.certWaitMs ?? CERT_WAIT_MS);
+  const zone = host.split(".").slice(1).join(".");
+  let announced = false;
+  let lastNote = started;
+  for (;;) {
+    let reply: CallResult;
+    try {
+      reply = await call({ method: "GET", path: `/v1/apps/${plan.project}`, ok: [404] });
+    } catch (error) {
+      const why = error instanceof Error ? error.message : String(error);
+      return { state: "unchecked", host, error: why, waitedMs: Date.now() - started };
+    }
+    const routes = Array.isArray(reply.body?.routes) ? reply.body.routes : [];
+    const route = routes.map((entry) => jsonObject(entry)).find((entry) => entry?.key === host);
+    const cert = jsonObject(route?.cert ?? null);
+    const state = cert?.state;
+    const waitedMs = Date.now() - started;
+    if (route?.kind !== "platform" || (state !== "pending" && state !== "ready" && state !== "failed"))
+      return undefined;
+    if (state === "ready") {
+      if (announced)
+        io.log(ok(`  certificate  ready for *.${zone} (after ${Math.max(1, Math.round(waitedMs / 1000))} s)`));
+      return { state, host, error: null, waitedMs };
+    }
+    const error = isString(cert?.error) ? cert.error : null;
+    if (state === "failed") return { state, host, error, waitedMs };
+    if (!announced) {
+      announced = true;
+      io.log(
+        `  certificate  ordering the HTTPS certificate for *.${zone}; a new team's first one takes about 3 minutes (waiting up to ${Math.round((plan.certWaitMs ?? CERT_WAIT_MS) / 1000)} s)`,
+      );
+    } else if (Date.now() - lastNote >= CERT_NOTE_EVERY_MS) {
+      lastNote = Date.now();
+      io.log(`  certificate  still being issued (${Math.round(waitedMs / 1000)} s)`);
+    }
+    if (signal?.aborted)
+      throw new Interrupted(`interrupted; the app is live, its certificate for *.${zone} is still being issued`);
+    if (Date.now() >= deadline) return { state: "pending", host, error: null, waitedMs };
+    await io.sleep(Math.min(plan.certPollMs ?? 3000, Math.max(0, deadline - Date.now())));
+  }
+}
+
 export async function deployToCloud(plan: CloudDeployPlan, io: CloudIo): Promise<CloudDeployResult> {
   const call = makeCall(plan);
   checkServiceBindings(plan.project, plan.services ?? [], plan.compatibilityDate);
@@ -348,7 +442,11 @@ export async function deployToCloud(plan: CloudDeployPlan, io: CloudIo): Promise
   if (plan.noWait) return { created, generation, url, routes, applied: "skipped" };
 
   const applied = await waitForApply(call, plan, generation, io);
-  return { created, generation, url, routes, applied };
+  const certificate =
+    applied === true && plan.hosts[0] !== undefined
+      ? await waitForCertificate(call, plan, plan.hosts[0], io)
+      : undefined;
+  return { created, generation, url, routes, applied, certificate };
 }
 
 async function pushAssets(call: CallFn, bundle: AssetBundle, io: CloudIo): Promise<void> {
@@ -441,6 +539,9 @@ export type BuildPlan = CloudCredentials &
     noWait: boolean;
     waitMs?: number;
     pollMs?: number;
+    /** Milliseconds to wait for the team's HTTPS certificate once the app is live (default 3 minutes). */
+    certWaitMs?: number;
+    certPollMs?: number;
     retryMs?: number;
     maxReconnects?: number;
   };
@@ -462,6 +563,7 @@ export type BuildDeployResult = {
   url: string | undefined;
   routes: string[];
   applied: boolean | "skipped";
+  certificate?: CertOutcome;
   buildId: string;
   build: BuildView;
 };
@@ -557,6 +659,27 @@ export function parseSseFrames(buffer: string): SseParse {
     if (seen) frames.push({ event, id, data: data.join("\n") });
   }
   return { frames, rest };
+}
+
+/**
+ * `sproutboat delete` on the Cloud: DELETE /v1/apps/<app>. The app is marked deleted and the Cloud removes it from its host, so it stops
+ * serving shortly after. A key with only app:delete_own may delete apps that key created; any other app of the team needs app:delete.
+ * Returns false when the team has no such app (already gone).
+ */
+export async function deleteCloudApp(credentials: CloudCredentials, project: string): Promise<boolean> {
+  if (!CLOUD_PROJECT_RE.test(project))
+    throw new CloudError(
+      `"${project}" is not a valid Cloud app name (3 to 32 characters: lowercase letters, digits, dashes)`,
+    );
+  const reply = await makeCall(credentials)({ method: "DELETE", path: `/v1/apps/${project}`, ok: [403, 404] });
+  if (reply.status === 404) return false;
+  if (reply.status === 403) {
+    const need = isString(reply.body?.need) ? reply.body.need : "app:delete";
+    throw new CloudError(
+      `this key cannot delete ${project} (needs ${need}): a key with app:delete_own may delete only the apps that key created; ask a team Owner or Admin, use another key, or delete it in the dashboard (the sprout's Settings)`,
+    );
+  }
+  return true;
 }
 
 export async function cancelCloudBuild(credentials: CloudCredentials, id: string): Promise<BuildView> {
@@ -804,5 +927,9 @@ export async function buildAndDeploy(plan: BuildPlan, io: CloudIo, signal?: Abor
   }
   if (plan.noWait) return { created, generation, url, routes, applied: "skipped", buildId: view.id, build: view };
   const applied = await waitForApply(call, plan, generation, io, signal);
-  return { created, generation, url, routes, applied, buildId: view.id, build: view };
+  const certificate =
+    applied === true && plan.hosts[0] !== undefined
+      ? await waitForCertificate(call, plan, plan.hosts[0], io, signal)
+      : undefined;
+  return { created, generation, url, routes, applied, certificate, buildId: view.id, build: view };
 }

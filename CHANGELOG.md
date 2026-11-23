@@ -10,6 +10,12 @@ maintained going forward by the `release` skill.
 
 ## Unreleased
 
+### Fixed
+
+- **`deploy` no longer presents a dead address as live on a new team.** A team's first HTTPS certificate (a wildcard for `<team>.sproutboat.app`) takes about two minutes, and until then the printed URL fails the TLS handshake. After the app is applied, `deploy` now reads the certificate state the Cloud reports for the platform name and waits for it (a progress line, up to 3 minutes; `SPROUTBOAT_CERT_WAIT_MS` changes the limit, `0` skips the wait). If it is still pending or failed, it prints `! Created <app>, but its address is not ready yet` with the reason instead of the done line. A Cloud that reports no certificate state is not waited on.
+- **`sproutboat delete` works on the Cloud.** It called a Community route and got 404. On a Cloud it now deletes the app of the project (or `--name`, `--account` picks the team) with `DELETE /v1/apps/<app>`, asks first like `wrangler delete` (default no), and `--force`, `-f`, `--yes` or `-y` skip the question; without a terminal one of them is required. A key with only `app:delete_own` is told what it lacks.
+- **A new app over the team's app limit stops before anything is uploaded.** `deploy` asks `GET /v1/limits` first (`new_app_refusal`) and prints the Cloud's own message, instead of building for 35 seconds and failing at the end. Older Clouds still refuse at the build.
+
 ## [0.62.0] - 2026-11-23
 
 New runtime: `@sproutboat/runtime` 0.49.2 (toolchain, wire and assets unchanged, 0.29.1, 0.23.0 and 0.3.2). Sproutboat Cloud's runtime generation is unchanged: 0.49.2 only changes the dev-only broker transport.

@@ -24,7 +24,8 @@ const srcDir = import.meta.dir;
 const root = resolve(srcDir, "..");
 
 function render(): string {
-  const rows = (cells: string[][]) => cells.map((r) => `| ${r.join(" | ")} |`).join("\n");
+  const rows = (cells: string[][]) =>
+    cells.map((r) => `| ${r.map((c) => c.replaceAll("|", "\\|")).join(" | ")} |`).join("\n");
   return [
     `# ${CLI_NAME} — surface`,
     "",

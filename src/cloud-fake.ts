@@ -35,6 +35,15 @@ export type FakeOptions = {
   /** R2 buckets the app's host holds (binding names): /v1/apps/<p>/r2/<BUCKET>/objects/<key> stores objects in memory. */
   r2?: string[];
   build?: FakeBuildOptions;
+  /**
+   * The certificate state GET /v1/apps/<project> reports for the app's platform route, one answer per read (the last repeats). Without it the
+   * routes carry no certificate state, as on a Cloud that predates it.
+   */
+  certStates?: ("pending" | "ready" | "failed")[];
+  /** The team is at its app limit: GET /v1/limits says a new app would be refused (the message), and a build for a new app is 403 at submit. */
+  appLimitMessage?: string;
+  /** DELETE /v1/apps/<project>: 403 (the key lacks the permission). */
+  denyDelete?: boolean;
   /** The team's custom-domain claims (/v1/domains): `published` hosts show their TXT record (verify passes), `heldByOther`
    * hosts another team verified (verify is 409), `claims` already exist. */
   domains?: {
@@ -125,6 +134,11 @@ export function startFakeCloud(options: FakeOptions = {}) {
   let generation = 0;
   let lastProject = "hello";
   let applies = [...(options.applyStates ?? ["applied"])];
+  const certStates = [...(options.certStates ?? [])];
+  const refuseNewApp = () =>
+    options.appLimitMessage === undefined
+      ? null
+      : Response.json({ error: options.appLimitMessage, reason: "quota-apps", limit: 5, used: 5 }, { status: 403 });
   let spec: JsonObject = {};
   const secretStore = new Map<string, string>(Object.entries(options.existingSecrets ?? {}));
   const written: JsonObject[] = [];
@@ -407,6 +421,10 @@ export function startFakeCloud(options: FakeOptions = {}) {
             { error: "at most 2 builds at once per team; wait for one to finish", reason: "team-queue-full" },
             { status: 429 },
           );
+        if (!appExists) {
+          const full = refuseNewApp();
+          if (full) return full;
+        }
         // The build spec is stored in plaintext, so the real Cloud refuses secrets in it.
         const buildSpec = jsonObject(sent.spec ?? null) ?? {};
         if ("secrets" in buildSpec || "secrets_patch" in buildSpec)
@@ -723,14 +741,42 @@ export function startFakeCloud(options: FakeOptions = {}) {
           return Response.json({ app_id: fakeAppId(m[1]!), record_generation: generation, name: m[2] });
         }
       }
+      if (path === "/v1/limits" && request.method === "GET") {
+        const full = refuseNewApp();
+        return Response.json({
+          enabled: true,
+          limits: { apps: 5 },
+          overridden: [],
+          usage: { apps: full ? 5 : 1 },
+          new_app_refusal: full ? { reason: "quota-apps", message: options.appLimitMessage } : null,
+        });
+      }
       m = /^\/v1\/apps\/([^/]+)$/.exec(path);
+      if (m && request.method === "DELETE") {
+        if (options.denyDelete) return Response.json({ error: "forbidden", need: "app:delete" }, { status: 403 });
+        if (!appExists) return Response.json({ error: "not found" }, { status: 404 });
+        appExists = false;
+        return Response.json({ deleted: true });
+      }
       if (m && request.method === "GET") {
         if (!appExists) return Response.json({ error: "no such app" }, { status: 404 });
         const state = applies.length > 1 ? applies.shift()! : applies[0]!;
+        const certState = certStates.length > 1 ? certStates.shift()! : certStates[0];
+        const hosts = Array.isArray(spec.hosts) ? spec.hosts.filter(isString) : [];
         return Response.json({
           app_id: m[1],
           record_generation: generation,
           spec,
+          // undefined drops out of the JSON: no routes, as on a Cloud that reports no certificate state
+          routes: certState
+            ? hosts.map((key) => ({
+                key,
+                host: key,
+                path: "",
+                kind: "platform",
+                cert: { state: certState, error: certState === "failed" ? "dns timeout" : null, expires_at: null },
+              }))
+            : undefined,
           apply: {
             state,
             applied_generation: state === "applied" ? generation : null,

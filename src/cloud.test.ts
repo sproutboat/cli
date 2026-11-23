@@ -450,7 +450,13 @@ describe("cloud deploy", () => {
       expect(cloud.spec).toMatchObject({ hosts: ["hello.acme.sproutboat.app"] });
       expect(cloud.modules.size).toBe(1);
       const paths = cloud.calls.map((c) => `${c.method} ${c.path.replace(/[0-9a-f]{64}/, "<sha>")}`);
-      expect(paths.slice(0, 3)).toEqual(["GET /v1/apps/hello", "PUT /v1/modules/<sha>", "PUT /v1/apps/hello"]);
+      // a first deploy asks the limits first, so an app over the limit stops before anything is uploaded
+      expect(paths.slice(0, 4)).toEqual([
+        "GET /v1/apps/hello",
+        "GET /v1/limits",
+        "PUT /v1/modules/<sha>",
+        "PUT /v1/apps/hello",
+      ]);
       expect(cloud.calls.every((c) => c.auth === `Bearer ${FAKE_KEY}`)).toBe(true);
     } finally {
       cloud.stop();
@@ -787,6 +793,117 @@ describe("the CLI end to end", () => {
       });
       expect(out.code).toBe(1);
       expect(out.stderr).toContain("hello is not deployed yet");
+    } finally {
+      cloud.stop();
+    }
+  });
+
+  test("a deploy whose certificate failed does not print the address as done", async () => {
+    const cloud = startFakeCloud({ certStates: ["failed"] });
+    try {
+      const out = await run(["deploy", project, "--module", join(project, "app.so")], {
+        SPROUTBOAT_API_URL: cloud.url,
+        SPROUTBOAT_API_TOKEN: FAKE_KEY,
+      });
+      expect(out.code).toBe(0);
+      expect(out.stdout).toContain("Created hello, but its address is not ready yet");
+      expect(out.stdout).toContain("could not be issued: dns timeout");
+      expect(out.stdout).not.toContain("Created hello\n");
+    } finally {
+      cloud.stop();
+    }
+  });
+
+  test("a certificate still pending after the wait says so instead of the done line; once ready the usual line prints", async () => {
+    const pending = startFakeCloud({ certStates: ["pending"] });
+    try {
+      const out = await run(["deploy", project, "--module", join(project, "app.so")], {
+        SPROUTBOAT_API_URL: pending.url,
+        SPROUTBOAT_API_TOKEN: FAKE_KEY,
+        SPROUTBOAT_CERT_WAIT_MS: "50",
+        SPROUTBOAT_CERT_POLL_MS: "5",
+      });
+      expect(out.code).toBe(0);
+      expect(out.stdout).toContain("ordering the HTTPS certificate for *.acme.sproutboat.app");
+      expect(out.stdout).toContain("Created hello, but its address is not ready yet");
+      expect(out.stdout).toContain("still being issued");
+    } finally {
+      pending.stop();
+    }
+    const soon = startFakeCloud({ certStates: ["pending", "pending", "ready"] });
+    try {
+      const out = await run(["deploy", project, "--module", join(project, "app.so")], {
+        SPROUTBOAT_API_URL: soon.url,
+        SPROUTBOAT_API_TOKEN: FAKE_KEY,
+        SPROUTBOAT_CERT_POLL_MS: "5",
+      });
+      expect(out.stdout).toContain("certificate  ready for *.acme.sproutboat.app");
+      expect(out.stdout).toContain("Created hello");
+      expect(out.stdout).not.toContain("not ready yet");
+      expect(out.stdout).toContain("https://hello.acme.sproutboat.app");
+    } finally {
+      soon.stop();
+    }
+  });
+
+  test("delete on the Cloud: asks to be sure without a terminal, then --force deletes the app of the project", async () => {
+    const cloud = startFakeCloud({ appExists: true });
+    try {
+      const env = { SPROUTBOAT_API_URL: cloud.url, SPROUTBOAT_API_TOKEN: FAKE_KEY };
+      const refused = await run(["delete", project], env);
+      expect(refused.code).not.toBe(0);
+      expect(refused.stderr).toContain("re-run with --force (or -y) to confirm");
+      expect(cloud.calls.some((c) => c.method === "DELETE")).toBe(false);
+      const gone = await run(["delete", project, "--force"], env);
+      expect(gone.stderr).toBe("");
+      expect(gone.code).toBe(0);
+      expect(gone.stdout).toContain("deleted hello");
+      expect(cloud.calls.filter((c) => c.method === "DELETE").map((c) => c.path)).toEqual(["/v1/apps/hello"]);
+      expect(cloud.calls.some((c) => c.path.startsWith("/api/projects"))).toBe(false);
+      const again = await run(["delete", "--name", "hello", "-y", "--account", "acme"], env, project);
+      expect(again.code).not.toBe(0);
+      expect(again.stderr).toContain("hello is not deployed on this team");
+    } finally {
+      cloud.stop();
+    }
+  });
+
+  test("delete on the Cloud: --yes works too, --name needs no project, and a key without the permission is told what it needs", async () => {
+    const cloud = startFakeCloud({ appExists: true });
+    try {
+      const out = await run(["delete", "--name", "other-app", "--yes"], {
+        SPROUTBOAT_API_URL: cloud.url,
+        SPROUTBOAT_API_TOKEN: FAKE_KEY,
+      });
+      expect(out.code).toBe(0);
+      expect(cloud.calls.filter((c) => c.method === "DELETE").map((c) => c.path)).toEqual(["/v1/apps/other-app"]);
+    } finally {
+      cloud.stop();
+    }
+    const denied = startFakeCloud({ appExists: true, denyDelete: true });
+    try {
+      const out = await run(["delete", project, "-y"], {
+        SPROUTBOAT_API_URL: denied.url,
+        SPROUTBOAT_API_TOKEN: FAKE_KEY,
+      });
+      expect(out.code).not.toBe(0);
+      expect(out.stderr).toContain("cannot delete hello (needs app:delete)");
+    } finally {
+      denied.stop();
+    }
+  });
+
+  test("delete refuses a --name with no value and a path-shaped name, without sending a DELETE", async () => {
+    const cloud = startFakeCloud({ appExists: true });
+    try {
+      const env = { SPROUTBOAT_API_URL: cloud.url, SPROUTBOAT_API_TOKEN: FAKE_KEY };
+      const missing = await run(["delete", project, "--force", "--name"], env);
+      expect(missing.code).not.toBe(0);
+      expect(missing.stderr).toContain("--name needs a project name");
+      const traversal = await run(["delete", "--name", "../keys/self", "--force"], env);
+      expect(traversal.code).not.toBe(0);
+      expect(traversal.stderr).toContain("is not a valid Cloud app name");
+      expect(cloud.calls.filter((c) => c.method === "DELETE")).toEqual([]);
     } finally {
       cloud.stop();
     }
