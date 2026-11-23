@@ -146,22 +146,31 @@ jobs:
       fail-fast: false
       matrix:
         include:
+          # GitHub's hosted macOS pools are routinely starved (jobs cancelled after
+          # ~15 min unacquired), so a pull request must not wait on them. On a
+          # pull_request the macOS legs cross-build on Linux and only check the
+          # Mach-O architecture; on push to main they run natively on macOS and
+          # smoke-test the binary (the release workflows do the same before
+          # publishing). The job names stay the same: the ruleset requires them.
           - name: macOS x64
-            # GitHub's macOS x64 pool is routinely unavailable. Bun can
-            # cross-compile this target from the macOS arm64 image.
             runner: macos-15
             dir: darwin-x64
-            cross: true
+            macho: x86_64
+            # x64 is never run: the macOS image is arm64, so it is always cross-built and checked.
+            always-cross: true
           - name: macOS arm64
             runner: macos-15
             dir: darwin-arm64
+            macho: arm64
           - name: Linux x64
             runner: ubuntu-24.04
             dir: linux-x64
           - name: Linux arm64
             runner: ubuntu-24.04-arm
             dir: linux-arm64
-    runs-on: ${{ matrix.runner }}
+    runs-on: ${{ github.event_name == 'pull_request' && startsWith(matrix.runner, 'macos') && 'ubuntu-24.04' || matrix.runner }}
+    env:
+      CROSS: ${{ matrix.always-cross == true || (github.event_name == 'pull_request' && startsWith(matrix.runner, 'macos')) }}
     steps:
       - uses: actions/checkout@v7
       - uses: oven-sh/setup-bun@v2
@@ -188,16 +197,16 @@ jobs:
             echo "@sproutboat/$name -> $(bun -e "console.log(Bun.resolveSync('@sproutboat/$name', process.cwd()))")"
           done
       - run: bun scripts/build-cli.ts --target ${{ matrix.dir }}
-      - name: Check the cross-built executable's architecture
-        if: matrix.cross
+      - name: Check the cross-built macOS executable's architecture
+        if: env.CROSS == 'true'
         shell: bash
         run: |
           cli="platform-packages/${{ matrix.dir }}/bin/sproutboat"
           test -x "$cli"
           file "$cli"
-          lipo -archs "$cli" | grep -qw x86_64 || { echo "not an x86_64 binary"; exit 1; }
+          file "$cli" | grep -q "Mach-O 64-bit ${{ matrix.macho }} executable" || { echo "not a Mach-O ${{ matrix.macho }} binary"; exit 1; }
       - name: Exercise the packaged executable with a cold host cache
-        if: ${{ !matrix.cross }}
+        if: env.CROSS != 'true'
         shell: bash
         run: |
           cli="platform-packages/${{ matrix.dir }}/bin/sproutboat"
