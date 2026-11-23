@@ -1,16 +1,7 @@
 /**
- * Embed the starter templates in the CLI.
- *
- * `templates/<name>/` are real projects: CI runs each one (typecheck, tests, standalone, workerd). `sproutboat init
- * --template <name>` has to find them in the compiled executable, which carries no files of its own, so this writes
- * every text file of every template into `src/templates-embedded.ts`, a module the executable bundles like any other.
- *
- *   bun scripts/embed-templates.ts           # rewrite src/templates-embedded.ts
- *   bun scripts/embed-templates.ts --check   # exit 1 when it is out of date (src/templates.test.ts runs this check)
- *
- * What is left out, because a project generates or installs it: worker-configuration.d.ts (`init` runs
- * `sproutboat types` on the new project, so its hash matches the project's name), node_modules, build output,
- * lockfiles and `.dev.vars`.
+ * Embed the starter templates in the CLI: `templates/<name>/` are real projects CI runs, and `init --template` has to find
+ * them in the compiled executable, so their text files go into `src/templates-embedded.ts` (`--check` exits 1 when stale).
+ * Left out because a project generates or installs it: worker-configuration.d.ts, node_modules, build output, lockfiles, `.dev.vars`.
  */
 import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { join, relative, resolve } from "node:path";

@@ -1,11 +1,7 @@
 /**
- * `sproutboat tail`: stream one app's live events from the control plane
- * (`GET /api/projects/<name>/tail`, Server-Sent Events) the way `wrangler tail`
- * does. Request events come from the edge log; console output and uncaught
- * exceptions come from the sprout's own output and arrive as their own events,
- * never attached to a request (the runtime does not tag a console line with a
- * request id). The server enforces the filters, a per-second event cap and a
- * ten minute connection cap; this side reconnects when that cap closes the stream.
+ * `sproutboat tail`: stream one app's live events (`GET /api/projects/<name>/tail`, SSE) like `wrangler tail`. Console output
+ * and exceptions arrive as their own events, never attached to a request (the runtime does not tag a console line with a
+ * request id). The server caps a connection at ten minutes; this side reconnects when it closes the stream.
  */
 import { isString, jsonObject, parseJsonValue, type JsonObject, type JsonValue } from "./json";
 import { amber, bold, dim, leaf, rose } from "./style";
@@ -24,9 +20,7 @@ export type TailArgs = {
   outcome: string[];
   /** #268: follow a standalone binary's SB_LOG=json records in this file ("-" for stdin) instead of the control plane. */
   file: string | undefined;
-  /** With --file: how many of the last matching records to print before following. */
   lines: number;
-  /** With --file: false prints the snapshot and exits. */
   follow: boolean;
 };
 
@@ -67,7 +61,6 @@ const VALUE_FLAGS = [
 ] as const;
 const MAX_LINES = 100_000;
 
-/** Parse `tail` arguments; `error` is a usage error message. */
 export function parseTailArgs(args: string[]): { args: TailArgs } | { error: string } {
   const parsed: TailArgs = {
     dir: undefined,
@@ -147,7 +140,6 @@ export function parseTailArgs(args: string[]): { args: TailArgs } | { error: str
   return { args: parsed };
 }
 
-/** Query string for the live endpoint. Repeatable filters repeat the parameter. */
 export function tailQuery(args: TailArgs): string {
   const params = new URLSearchParams();
   for (const status of args.status) params.append("status", status);
@@ -158,7 +150,6 @@ export function tailQuery(args: TailArgs): string {
   return params.toString();
 }
 
-/** Decode an SSE body into frames; comments (keepalives) and malformed data are skipped. */
 export async function* readFrames(body: ReadableStream<Uint8Array>): AsyncGenerator<TailFrame> {
   const reader = body.getReader();
   const decoder = new TextDecoder();
@@ -286,12 +277,8 @@ function statusColor(status: number, text: string): string {
 const message = (parts: JsonValue[]): string =>
   parts.map((part) => (isString(part) ? part : JSON.stringify(part))).join(" ");
 
-/**
- * Pretty lines for one event: the request line (time, method, url, status,
- * outcome, cpu and wall ms), then its console lines and exceptions indented. A
- * console-only event (the usual case, see the module comment) prints flush left
- * so it does not read as belonging to the request printed above it.
- */
+/** Pretty lines for one event: the request line, then its console lines and exceptions indented. A console-only event
+ * prints flush left so it does not read as belonging to the request printed above it. */
 export function formatEvent(event: TailEvent): string[] {
   const lines: string[] = [];
   const time = dim(clock(event.eventTimestamp));
@@ -326,14 +313,12 @@ export type RunTailOptions = {
   stderr?: (text: string) => void;
   /** First delay after a failed connection; doubles up to 8 seconds. */
   retryMs?: number;
-  /** Give up after this many failed connections in a row. */
   maxFailures?: number;
   /** Reconnect if the server sends nothing (not even a keepalive) for this long. */
   idleMs?: number;
   fetchFn?: typeof fetch;
 };
 
-/** How a stream attempt ended, so the caller can decide to retry or stop. */
 export class TailError extends Error {
   constructor(
     message: string,
@@ -356,11 +341,7 @@ const sleep = (ms: number, signal: AbortSignal) =>
     );
   });
 
-/**
- * Stream until `signal` aborts. Reconnects when the server closes the stream
- * (its time cap) or the link drops; a 4xx answer (bad filter, no auth, no such
- * project) is final.
- */
+/** Stream until `signal` aborts. Reconnects when the server closes the stream or the link drops; a 4xx answer is final. */
 export async function runTail(options: RunTailOptions): Promise<void> {
   const out = options.stdout ?? ((text: string) => void process.stdout.write(text));
   const err = options.stderr ?? ((text: string) => void process.stderr.write(text));

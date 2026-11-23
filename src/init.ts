@@ -1,12 +1,7 @@
 /**
- * `sproutboat init`: scaffold a project, in the shape of `npm create cloudflare` (create-cloudflare, "C3").
- *
- *   sproutboat init [name] [--template <name>] [--git | --no-git] [--install | --no-install] [-y]
- *   sproutboat init --list-templates
- *
- * Interactive in a terminal (it asks for the template, the directory, git and installing, with C3's defaults);
- * silent everywhere else, where nothing runs that a flag did not ask for. Everything outside the filesystem
- * (prompts, git, the package manager) goes through `InitIo`, so tests drive the whole flow without a terminal.
+ * `sproutboat init`: scaffold a project, in the shape of `npm create cloudflare` (C3). Interactive in a terminal, silent
+ * everywhere else, where nothing runs that a flag did not ask for. Everything outside the filesystem goes through
+ * `InitIo`, so tests drive the whole flow without a terminal.
  */
 import { existsSync } from "node:fs";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
@@ -35,7 +30,6 @@ export type InitOptions = {
   template?: string;
   git?: boolean;
   install?: boolean;
-  /** `-y`: take every default without asking, git and install included. */
   yes: boolean;
   list: boolean;
 };
@@ -45,23 +39,17 @@ export type Choice = { value: string; label: string };
 export type InitIo = {
   cwd: string;
   cliVersion: string;
-  /** A person is here to answer: stdin and stdout are terminals. */
   interactive: boolean;
   log(line: string): void;
   warn(line: string): void;
   ask(question: string, fallback: string): Promise<string>;
-  /** Pick one of `choices` by number, `fallback` (a value) on an empty answer. */
   choose(question: string, choices: readonly Choice[], fallback: string): Promise<string>;
   confirm(question: string, fallback: boolean): Promise<boolean>;
-  /** Run a command with the terminal attached; resolves to its exit code (127 when it cannot start). */
   run(command: string, args: readonly string[], cwd: string): Promise<number>;
-  /** Run a command and return its exit code and output. */
   capture(command: string, args: readonly string[], cwd: string): Promise<{ code: number; stdout: string }>;
-  /** Called once when init ends, however it ends. */
   close?(): void;
 };
 
-/** A failure the user can act on; `main.ts` prints the message and exits 1. */
 export class InitError extends Error {}
 
 const NAME_PATTERN = /^[a-z0-9](?:[a-z0-9-]{1,30}[a-z0-9])?$/;
@@ -95,8 +83,6 @@ export function templateListing(): string {
     .join("\n");
 }
 
-// -------------------------------------------------------------- the hello starter
-
 const helloConfig = (name: string) => `{
   "$schema": "https://sproutboat.com/schema.json",
   "name": "${name}",
@@ -110,16 +96,12 @@ const helloHandler = `export default {
   }
 };
 `;
-// .sproutboat/ holds build output (dist/) and `dev`'s local broker state
-// (dev/, including its SQLite files), neither of which belongs in version control.
-// .dev.vars carries secret values for `sproutboat dev`, same convention as
-// Wrangler's file of the same name.
+// .sproutboat/ holds build output and `dev`'s local broker state (SQLite files), which do not belong in version control.
+// .dev.vars carries secret values for `sproutboat dev`, as Wrangler's file of the same name does.
 const gitignore = `.sproutboat/
 .dev.vars
 node_modules/
 `;
-
-// -------------------------------------------------------------- the flow
 
 export async function runInit(options: InitOptions, io: InitIo): Promise<void> {
   try {
@@ -273,8 +255,6 @@ async function initGit(directory: string, shown: string, io: InitIo): Promise<vo
       : `  git: initialized ${shown}; the first commit failed (is user.name set?)`,
   );
 }
-
-// -------------------------------------------------------------- the terminal
 
 export function terminalInitIo(cliVersion: string): InitIo {
   let lines: import("node:readline/promises").Interface | undefined;

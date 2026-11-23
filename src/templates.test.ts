@@ -1,8 +1,7 @@
 /**
- * The starter templates and `sproutboat init` around them: the embedded copy matches templates/, every starter is
- * a project that follows the rules for one (a package.json that init can finish, a README that says how to move to
- * Wrangler, a config only made of keys Wrangler has), and the whole flow (prompts, files, git, install) works with
- * a fake terminal. Running the starters is `src/templates-run.test.ts`; the gates are `bun run examples`.
+ * The starter templates and `sproutboat init`: the embedded copy matches templates/, every starter follows the rules for
+ * one (a package.json init can finish, a README on moving to Wrangler, a config of keys Wrangler has), and the flow works
+ * with a fake terminal. Running the starters is `templates-run.test.ts`; the gates are `bun run examples`.
  */
 import { afterEach, describe, expect, test } from "bun:test";
 import { existsSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync, mkdirSync } from "node:fs";
@@ -127,8 +126,6 @@ describe("each template", () => {
     }
   });
 });
-
-// -------------------------------------------------------------- init, with a fake terminal
 
 type Calls = { logs: string[]; warnings: string[]; ran: string[]; captured: string[]; asked: string[] };
 

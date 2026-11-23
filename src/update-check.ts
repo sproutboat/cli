@@ -1,9 +1,5 @@
-/**
- * "update available 0.4.4" notice, wrangler-style. Checks npm at most once a
- * day, caches the answer next to the credentials, and never fails or blocks the
- * command for more than a second. Silent when up to date, offline, in CI, or
- * when SPROUTBOAT_NO_UPDATE_CHECK is set.
- */
+/** "update available" notice, wrangler-style: checks npm at most once a day, never fails or blocks the command for more than
+ * a second. Silent when up to date, offline, in CI, or when SPROUTBOAT_NO_UPDATE_CHECK is set. */
 import { readFile, writeFile } from "node:fs/promises";
 import { resolve } from "node:path";
 import { configDirectory } from "./credentials";
@@ -15,7 +11,6 @@ const REGISTRY = "https://registry.npmjs.org/sproutboat/latest";
 
 type Cache = { checkedAt: number; latest: string };
 
-/** Decode our own cache file, which a stale version or a partial write can corrupt. */
 function parseCache(source: string): Cache | undefined {
   const record = jsonObject(parseJsonValue(source));
   return record && isSafeInteger(record.checkedAt) && isString(record.latest)
@@ -65,7 +60,6 @@ async function latestVersion(): Promise<string | undefined> {
   return undefined;
 }
 
-/** Print one dim line to stderr if a newer `sproutboat` is on npm. Never throws. */
 export async function notifyIfOutdated(current: string): Promise<void> {
   if (process.env.SPROUTBOAT_NO_UPDATE_CHECK || process.env.CI) return;
   const latest = await latestVersion();

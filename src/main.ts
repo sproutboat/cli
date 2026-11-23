@@ -189,10 +189,8 @@ if (internalModeAt > 0) {
 const defaultApiUrl = DEFAULT_API_URL;
 
 /**
- * baronunread/sproutboat#204 — the single place the endpoint and the stored profile are chosen. `chooseTarget`
- * (target.ts) holds the precedence: the flags, then the environment, then the machine's active profile, then the
- * default endpoint, and a profile and a URL that name different places are an error. The choice is also what the
- * credential lookups use for the rest of the run.
+ * The one place the endpoint and the stored profile are chosen (baronunread/sproutboat#204); `chooseTarget` (target.ts)
+ * holds the precedence. The choice is also what the credential lookups use for the rest of the run.
  */
 async function resolveApiUrl(
   explicitApiUrl?: string,
@@ -220,7 +218,6 @@ async function resolveApiUrl(
   return { apiUrl: target.apiUrl, source: target.source, target };
 }
 
-/** The two lines that say where a command is about to act: which profile, and which endpoint. */
 async function printTarget(target: Target): Promise<void> {
   const profile = target.profile;
   const name = profile?.name ?? (await savedProfileName(target.apiUrl));
@@ -238,8 +235,7 @@ async function printTarget(target: Target): Promise<void> {
   console.log(`endpoint  ${target.apiUrl}  ${dim(`(${sourceLabel})`)}`);
 }
 
-/** Warn at most once per run: every API response carries the headers, and one
- *  command makes several calls. */
+/** Warn at most once per run: one command makes several calls, and every response carries the headers. */
 let skewWarned = false;
 
 async function responseText(response: Response, failure: string): Promise<string> {
@@ -303,10 +299,8 @@ function parseUrlResponse(
   };
 }
 
-/** #55: `{ from, to }` when this deploy moves the live version onto a different
- *  Porffor pin. Deployed artifacts are frozen at their build-time compiler, so
- *  the pin only changes by redeploying — and the alpha compiler's output can
- *  differ between pins. */
+/** #55: `{ from, to }` when this deploy moves the live version onto a different Porffor pin. Deployed artifacts are
+ *  frozen at their build-time compiler, and the alpha compiler's output can differ between pins. */
 function parsePorfforDrift(source: string): { from: string; to: string } | undefined {
   const drift = (() => {
     try {
@@ -344,23 +338,18 @@ function parseToken(source: string): string | undefined {
   return record && isString(record.token) ? record.token : undefined;
 }
 
-/** An operational failure — the command was invoked correctly but could not complete. Exit 1. */
 function fail(message: string): never {
   console.error(`${rose("✗")} ${message}`);
   process.exit(1);
 }
 
-/**
- * The command was invoked wrong (missing/unknown arg). Exit 2, the getopt/argparse
- * convention, so scripts can tell "you typed it wrong" apart from "it broke".
- * `usage` is the grammar line without the `usage: ` prefix.
- */
+/** The command was invoked wrong (missing or unknown arg). Exit 2, the getopt convention, so scripts can tell it from a
+ * failure. `usage` is the grammar line without the `usage: ` prefix. */
 function usageError(what: string, usage: string): never {
   console.error(`${rose("✗")} ${what}\n  ${dim(`usage: sproutboat ${usage}`)}`);
   process.exit(2);
 }
 
-/** The project directory and config file, from a positional directory and `--config`. */
 function locate(directory?: string) {
   try {
     return locateProject(directory);
@@ -370,8 +359,7 @@ function locate(directory?: string) {
   }
 }
 
-/** Read the project identity and configuration without touching application code.
- * Management commands must remain usable when a local checkout is incomplete. */
+/** Management commands must remain usable when a local checkout is incomplete. */
 async function readProjectConfig(directory?: string) {
   const { directory: projectDirectory, configPath } = locate(directory);
   let configSource: string;
@@ -397,10 +385,8 @@ async function readProjectConfig(directory?: string) {
   };
 }
 
-/** What to call the entry in messages: its path, or "assets only" when the project has no `main`. */
 const entryLabel = (config: { main: string }) => (config.main === ASSETS_ONLY_MAIN ? "assets only" : config.main);
 
-/** Full build input: configuration plus entry point, resolved imports and checks. */
 async function readProject(directory?: string) {
   const project = await readProjectConfig(directory);
   let sourcePath = resolve(project.directory, project.config.main);
@@ -479,7 +465,6 @@ async function types(args: string[]) {
   console.log(dim('  Commit it, and add it to the "include" of your tsconfig. Rerun after changing sproutboat.jsonc.'));
 }
 
-/** `dev` and `deploy`: keep the default generated types current (types-cmd.ts says when it does and does not). */
 async function refreshProjectTypes(projectDir: string, config: SproutboatConfig): Promise<void> {
   const { wrote, removedLegacy } = await refreshTypes(projectDir, config);
   if (wrote) console.log(dim(`  ${TYPES_FILE} refreshed from sproutboat.jsonc`));
@@ -509,12 +494,8 @@ async function build(directory?: string, target: BuildTarget = "linux-x86_64") {
 }
 
 /**
- * #15 — one executable carrying the sprout, its assets and its bindings.
- *
- * Defaults to a host build: the point is a binary you can run right here. Pass
- * `--target linux-x86_64` for a box, but note the Bun launcher is compiled for
- * *this* machine either way in phase 0 — cross-compiling both halves comes with
- * the embedded backend, which removes the launcher entirely.
+ * #15: one executable carrying the sprout, its assets and its bindings. The Bun launcher is compiled for *this*
+ * machine even with `--target linux-x86_64` in phase 0; the embedded backend removes the launcher.
  */
 async function buildStandaloneBinary(
   directory: string | undefined,
@@ -550,13 +531,8 @@ async function buildStandaloneBinary(
   }
 }
 
-/**
- * `build --emit-only`: run the build up to and including writing
- * `sprout.generated.js` (prelude, bindings and handler, exactly what Porffor
- * would compile), print its path and stop. Every source and config check still
- * fails the build; no compiler, SQLite or BearSSL is acquired and no binary is
- * written.
- */
+/** `build --emit-only`: stop after writing `sprout.generated.js` and print its path. Every check still fails the build;
+ * no compiler, SQLite or BearSSL is acquired. */
 async function emitOnly(directory: string | undefined, target: BuildTarget, standalone: boolean) {
   const project = await readProject(directory);
   console.log(
@@ -577,10 +553,7 @@ async function emitOnly(directory: string | undefined, target: BuildTarget, stan
   }
 }
 
-/**
- * The standalone source unit the Cloud compile starts from (what `build --standalone --emit-only` prints), and, when the project
- * has assets, whether they went into the module and why (printed as a warning when the worker reads them and they do not fit).
- */
+/** The standalone source unit the Cloud compile starts from, and whether the assets went into the module and why. */
 async function emitStandaloneUnit(
   directory: string | undefined,
 ): Promise<{ generatedPath: string; assetBake?: AssetBakePlan }> {
@@ -604,7 +577,6 @@ async function emitStandaloneUnit(
   }
 }
 
-/** #62 — build for this machine, run it against a real broker, rebuild on save. */
 const DEV_USAGE =
   "dev [project-dir] [--port <n>] [--ip <address>] [--no-watch] [-e, --env <name>] [--env-file <file>]...";
 
@@ -660,7 +632,6 @@ async function dev(args: string[]) {
   });
 }
 
-/** #275: start a standalone binary with its port, data directory and secrets supplied at launch. */
 async function run(args: string[]) {
   const result = parseRunArgs(args);
   if ("error" in result) usageError(result.error, RUN_USAGE);
@@ -682,7 +653,6 @@ async function run(args: string[]) {
   }
   console.log(ok(`launching ${plan.binary}`));
   const child = Bun.spawn([plan.binary], { env: plan.env, stdin: "inherit", stdout: "inherit", stderr: "inherit" });
-  // Forward termination to the binary, which is the only process this started.
   for (const signal of ["SIGINT", "SIGTERM", "SIGHUP"] as const) process.on(signal, () => child.kill(signal));
   const code = await child.exited;
   const signalNumber = child.signalCode ? osConstants.signals[child.signalCode] : undefined;
@@ -696,12 +666,8 @@ const PROVISION_FIELDS = [
   ["queues", "queue"],
 ] as const;
 
-/**
- * #74 auto-provisioning, wrangler-style. A bare-string KV/D1/R2/queue binding
- * with no id gets an account-level resource created (`<project>-<binding>`) on
- * deploy, and the id is written back into `sproutboat.jsonc`. `--no-provision`
- * skips this — those bindings then get an ephemeral deploy-scoped store.
- */
+/** #74: a bare-string KV/D1/R2/queue binding with no id gets a resource created on deploy and its id written back into
+ * `sproutboat.jsonc`; `--no-provision` leaves an ephemeral deploy-scoped store. */
 async function provisionBindings(directory?: string): Promise<void> {
   const { configPath } = locate(directory);
   let source = await readFile(configPath, "utf8");
@@ -735,7 +701,6 @@ async function provisionBindings(directory?: string): Promise<void> {
   await writeFile(configPath, source);
 }
 
-/** #79 — wrangler parity: drop the stored credential for an endpoint. */
 async function logout(args: string[]) {
   const { apiUrl, account, target } = await parseLoginArgs(args);
   await printTarget(target);
@@ -766,7 +731,6 @@ async function logout(args: string[]) {
     console.log(dim("no active endpoint remains — the next command falls through to the default"));
 }
 
-/** `profile list` and `profile use <name>`: the stored profiles, and which one a command uses by default. */
 async function profile(args: string[]) {
   const sub = args[0] ?? "list";
   if (sub === "use") {
@@ -797,11 +761,8 @@ async function profile(args: string[]) {
   console.log(dim("* is the default profile; pick another for one command with --profile <name>"));
 }
 
-/**
- * #79 — wrangler parity: which endpoint, and who the stored token belongs to.
- * The account comes from the control plane, so this also proves the token still
- * works rather than only reporting what is on disk.
- */
+/** #79: which endpoint, and who the stored token belongs to. The account comes from the control plane, so this also
+ * proves the token still works. */
 async function whoami(args: string[]) {
   const { apiUrl, target, account: wanted } = await parseLoginArgs(args);
   const fromEnv = envToken();
@@ -882,8 +843,7 @@ async function deploy(args: string[]) {
         );
     projectName = "";
   } else {
-    // wrangler-style: create resources for id-less bindings and pin the ids
-    // back into sproutboat.jsonc before the build bakes them into the artifact.
+    // Create resources for id-less bindings and pin the ids into sproutboat.jsonc before the build bakes them in.
     if (!args.includes("--no-provision") && !dryRun) await provisionBindings(directory);
     const built = await build(directory);
     projectName = built.project.config.name;
@@ -915,16 +875,14 @@ async function deploy(args: string[]) {
   form.set("manifest", new File([await manifest.arrayBuffer()], "manifest.json", { type: "application/json" }));
   form.set("sprout", new File([await sprout.arrayBuffer()], "sprout", { type: "application/octet-stream" }));
 
-  // #1 — ship the sidecars `sproutboat build` produced so the server can start
-  // the binding broker and serve static assets. Without bindings.json the broker
-  // never spawns and every KV/D1/R2/secret/queue/cron/DO call is dead on the box.
+  // #1: ship the sidecars `sproutboat build` produced. Without bindings.json the broker never spawns and every
+  // KV/D1/R2/secret/queue/cron/DO call is dead on the box.
   const bindingsFile = Bun.file(resolve(artifactDir, "bindings.json"));
   if (await bindingsFile.exists()) {
     form.set("bindings", new File([await bindingsFile.arrayBuffer()], "bindings.json", { type: "application/json" }));
   }
   const assetsManifestFile = Bun.file(resolve(artifactDir, "assets.json"));
   if (await assetsManifestFile.exists()) {
-    // assets.json is written by `sproutboat build` from the AssetManifest contract.
     const assetsManifest: { files?: AssetFiles } = await assetsManifestFile.json();
     form.set(
       "assets_manifest",
@@ -979,10 +937,8 @@ async function deploy(args: string[]) {
 }
 
 /**
- * Poll the deployment URL until the edge returns any non-5xx response. Connection
- * and TLS errors (the cert is issued on the first HTTPS request) count as "not
- * ready yet". Returns false on timeout without failing the deploy — the artifact
- * is already active server-side.
+ * Poll the deployment URL until the edge returns any non-5xx response. Connection and TLS errors count as "not ready
+ * yet" (the cert is issued on the first HTTPS request). False on timeout, without failing the deploy.
  */
 async function waitForHealthy(url: string, timeoutMs: number): Promise<boolean> {
   const deadline = Date.now() + timeoutMs;
@@ -1003,7 +959,6 @@ async function waitForHealthy(url: string, timeoutMs: number): Promise<boolean> 
 async function parseLoginArgs(args: string[], options: { allowNewProfile?: boolean } = {}) {
   let token: string | undefined;
   let account: string | undefined;
-  // --api-url is a global flag (global-flags.ts); resolveApiUrl reads it.
   for (let index = 0; index < args.length; index += 2) {
     const value = args[index + 1];
     if (args[index] === "--token" && value) token = value;
@@ -1018,7 +973,6 @@ async function parseLoginArgs(args: string[], options: { allowNewProfile?: boole
   return { apiUrl, source, target, token, account };
 }
 
-/** Say which profile a login went to, and when it left the machine's default profile pointed elsewhere. */
 function reportSaved(saved: { profile: string; activeProfile: string; activeApiUrl: string }): void {
   console.log(dim(`  stored as the profile "${saved.profile}"`));
   if (saved.activeProfile !== saved.profile)
@@ -1038,8 +992,6 @@ async function login(args: string[]) {
     await guard(() => cloudLogin(apiUrl, directToken, account));
     return;
   }
-  // Self-hosted / non-interactive: skip the browser flow and store the token
-  // the admin already holds (e.g. SPROUTBOAT_BOOTSTRAP_TOKEN).
   if (directToken) {
     const saved = await saveToken(apiUrl, directToken, kind);
     console.log(`Saved credentials for ${apiUrl}.`);
@@ -1113,7 +1065,6 @@ async function readSecretsFileOrFail(path: string) {
   }
 }
 
-/** Run a Cloud step; its CloudError becomes a printed failure. */
 async function guard<T>(step: () => Promise<T>): Promise<T> {
   try {
     return await step();
@@ -1123,7 +1074,6 @@ async function guard<T>(step: () => Promise<T>): Promise<T> {
   }
 }
 
-/** Remove `--name value` pairs from `args` (in place) and return their values. */
 function takeFlags<Name extends string>(args: string[], names: readonly Name[]) {
   const values: { [flag in Name]?: string } = {};
   for (const name of names) {
@@ -1138,7 +1088,6 @@ function takeFlags<Name extends string>(args: string[], names: readonly Name[]) 
   return values;
 }
 
-/** Cloud or Community, or undefined when the endpoint cannot be reached. */
 async function kindOf(apiUrl: string) {
   try {
     return await detectKind(apiUrl);
@@ -1225,10 +1174,8 @@ async function cloudLogin(apiUrl: string, directToken: string | undefined, accou
   reportSaved(done);
 }
 
-/**
- * `deploy --prepare-out <dir>`: the Cloud deploy up to its first network call, written to <dir> (src/prepare-out.ts). No login, no network.
- * The Cloud's builder runs this for a Git deploy; nothing here needs a team or a key.
- */
+/** `deploy --prepare-out <dir>`: the Cloud deploy up to its first network call, written to <dir> (src/prepare-out.ts).
+ * The Cloud's builder runs this for a Git deploy; nothing here needs a team or a key. */
 async function prepareOut(args: string[], outDir: string) {
   const directory = args.find((arg) => !arg.startsWith("--"));
   const project = await readProjectConfig(directory);
@@ -1641,7 +1588,6 @@ async function rollback(args: string[]) {
   console.log(deployment.url);
 }
 
-/** #268: follow a standalone binary's SB_LOG=json records from a file or stdin. Local only: no login. */
 async function tailLog(parsed: TailArgs, file: string) {
   // Ctrl-C (or a terminated pipe reader) ends the stream and exits 0.
   const controller = new AbortController();
@@ -1810,15 +1756,12 @@ async function domains(args: string[]) {
 
 async function secrets(args: string[]) {
   const sub = args[0] && ["list", "put", "delete", "bulk"].includes(args[0]) ? args.shift()! : "list";
-  // `--no-deploy`: change the secrets without waiting for a host to apply them as a new version.
   const noDeploy = args.includes("--no-deploy");
   if (noDeploy) args.splice(args.indexOf("--no-deploy"), 1);
   const flags = takeFlags(args, ["--account"] as const);
 
-  // `--value` is opt-in; without it the value comes from stdin, so a secret does
-  // not land in shell history. It is also what disambiguates the positionals:
-  // `secrets put NAME <value> [project-dir]` could not tell a value from a path,
-  // and read the value as the project directory.
+  // `--value` is opt-in; without it the value comes from stdin, so a secret does not land in shell history. It also
+  // disambiguates `secrets put NAME <value> [project-dir]`, which could not tell a value from a path.
   let inlineValue: string | undefined;
   const positional: string[] = [];
   const grammar = `secrets ${sub} ${sub === "list" ? "" : sub === "bulk" ? "[file.json | file.env] " : "<NAME> "}[project-dir] [--api-url <url>] [--account <team>]`;
@@ -1933,9 +1876,8 @@ async function bulkSecrets(positional: string[], flags: ReturnType<typeof takeFl
 }
 
 /**
- * After a secrets write on the Cloud: it is a new record generation, which a host applies as a new version of the
- * running module (the same module, the new secrets). Wait for that, as `wrangler secret put` deploys at once, unless
- * --no-deploy asks to return as soon as the write is stored.
+ * After a secrets write on the Cloud, which a host applies as a new version of the running module: wait for that, as
+ * `wrangler secret put` deploys at once, unless --no-deploy asks to return once the write is stored.
  */
 async function finishCloudSecretChange(input: {
   credentials: Awaited<ReturnType<typeof cloudCredentials>>;
@@ -1958,7 +1900,6 @@ async function finishCloudSecretChange(input: {
     );
 }
 
-/** The signed-in session for a Cloud endpoint as the credentials every Cloud call takes; logs in first when it can. */
 async function cloudCredentials(apiUrl: string, account: string | undefined) {
   const io = terminalIo();
   const session = await resolveSession({
@@ -1971,7 +1912,6 @@ async function cloudCredentials(apiUrl: string, account: string | undefined) {
   return { apiUrl, token: session.token, tokenFromEnv: session.source !== "stored login" };
 }
 
-/** `secrets` against a Sproutboat Cloud app: by name, apart from deploys, which never wipe them (Wrangler's model). */
 async function cloudSecrets(
   sub: string,
   name: string | undefined,
@@ -2113,7 +2053,7 @@ async function d1Contents(args: string[]) {
 
 /** `r2 object get | put | delete <bucket>/<key>`: remote only; on the Cloud the bucket is a binding of the project. */
 async function r2Object(args: string[]) {
-  args.shift(); // "object"
+  args.shift();
   const sub = args.shift();
   if (sub !== "get" && sub !== "put" && sub !== "delete")
     usageError(
@@ -2171,16 +2111,9 @@ async function r2Object(args: string[]) {
 }
 
 /**
- * #79 — one command per storage product (`kv`, `d1`, `r2`, `queues`), each with
- * the same five verbs, over that product's own `/api/<product>` collection.
- *
- * Wrangler nests two of its four (`kv namespace create`, `r2 bucket create`)
- * and leaves `d1 create` and `queues create` flat. The nesting is there to
- * separate the container from its contents, which the verb already does — so
- * ours are uniform, and contents take their own noun when they exist
- * (`kv key get`, `r2 object put`).
+ * #79: one command per storage product (`kv`, `d1`, `r2`, `queues`) with the same five verbs. Wrangler nests two of its
+ * four (`kv namespace create`) and leaves the others flat; ours are uniform, and contents take their own noun.
  */
-/** The account's resources of one kind, by name. */
 async function storageRows(base: string, auth: Record<string, string>, product: StorageProduct): Promise<JsonObject[]> {
   const body = await responseText(await fetch(base, { headers: auth }), `could not list ${product.plural}`);
   const parsed = jsonObject(parseJsonValue(body));
@@ -2189,7 +2122,6 @@ async function storageRows(base: string, auth: Record<string, string>, product: 
     .filter((entry): entry is JsonObject => Boolean(entry));
 }
 
-/** Resolve a name to its `<kind>_<id>` handle — the API addresses rows by id. */
 function idForName(rows: JsonObject[], name: string, product: StorageProduct): string {
   const match = rows.find((row) => row.name === name);
   if (!match || !isString(match.id)) fail(`no ${product.noun} named "${name}"`);
@@ -2460,7 +2392,6 @@ async function kvContents(args: string[]): Promise<void> {
 }
 
 async function deleteProject(args: string[]) {
-  // `sproutboat delete [project-dir] [--name <project>] --yes` — flags in any order.
   const positional: string[] = [];
   let confirmed = false;
   let explicitName: string | undefined;
@@ -2497,13 +2428,11 @@ async function deleteProject(args: string[]) {
   if (failed.length) console.log(`  ! ${failed.length} artifact file(s) left on disk — remove them manually`);
 }
 
-/** `sproutboat` alone or with -h/--help/help: the friendly grouped list, exit 0. */
 function help(): never {
   console.log(helpText());
   process.exit(0);
 }
 
-/** An unrecognised command: a short pointer on stderr, exit 2 (misuse, not failure). */
 function usage(): never {
   console.error(`${rose("✗")} unknown command "${command}"\n  ${dim("run `sproutboat` for the list of commands")}`);
   process.exit(2);
@@ -2545,8 +2474,6 @@ async function toolchain(args: string[]): Promise<void> {
     console.log(`macOS SDK: ${report.prerequisites.sdk ?? "missing: run xcode-select --install"}`);
 }
 
-/** `sproutboat <command> --help`: that command's full usage line + summary, exit 0. */
-/** The grammar line of a command, for usage errors. */
 function usageOf(name: string): string {
   const found = COMMANDS.find((c) => c.name === name);
   return found?.args ? `${name} ${found.args}` : name;
@@ -2564,7 +2491,6 @@ const BASH_COMPLETION = (names: string) =>
 const ZSH_COMPLETION = (names: string) => `#compdef ${CLI_NAME}\n_arguments '1: :(${names})'\n`;
 const FISH_COMPLETION = (names: string) => `complete -c ${CLI_NAME} -n "__fish_use_subcommand" -a "${names}"\n`;
 
-/** `sproutboat complete [shell]`: a static completion script for the top-level commands. */
 function complete(shell?: string): void {
   const names = COMMANDS.flatMap((c) => [c.name, ...(c.aliases ?? [])]).join(" ");
   const scripts = { bash: BASH_COMPLETION(names), zsh: ZSH_COMPLETION(names), fish: FISH_COMPLETION(names) };

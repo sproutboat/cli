@@ -22,9 +22,38 @@
     {
       "name": "anti-slop",
       "specifier": "./tools/oxlint/anti-slop/index.ts"
+    },
+    {
+      "name": "sproutboat",
+      "specifier": "./.oxlint/sproutboat/index.ts"
     }
   ],
   "overrides": [
+    {
+      // Comments here are bytes that matter, so they are left as they are: an edit changes a build or generation identity,
+      // or the file is code someone copies, or it has to stay verbatim. Trim them in a change that accepts that.
+      //  - build.ts, compile.ts, sqlite.ts, bearssl.ts, toolchain.ts: hashed by integrationIdentity() (build.ts) into the compile key
+      //  - node-shims.ts, bundle.ts: shim sources and stubs injected into the app bundle, which is hashed and compiled
+      //  - templates/**: copied into user projects and embedded verbatim in src/templates-embedded.ts
+      //  - examples/*/**, dogfood/**, bench/**, test/fixtures: apps the benchmarks and conformance runs build and compare
+      "files": [
+        "src/build.ts",
+        "src/compile.ts",
+        "src/sqlite.ts",
+        "src/bearssl.ts",
+        "src/toolchain.ts",
+        "src/node-shims.ts",
+        "src/bundle.ts",
+        "templates/**",
+        "examples/*/**",
+        "dogfood/**",
+        "bench/**",
+        "test/fixtures/*/src/**",
+        "test/fixtures/workers-verbatim/**",
+        "test/fixtures/runtime-comparison/**"
+      ],
+      "rules": { "sproutboat/max-comment-lines": "off" }
+    },
     {
       "files": ["examples/*/src/**", "examples/*/*/src/**", "dogfood/*/src/**", "test/fixtures/*/src/**"],
       "rules": { "anti-slop/require-safety-comment-for-type-assertion": "off" }
@@ -53,6 +82,7 @@
     }
   ],
   "rules": {
+    "sproutboat/max-comment-lines": "error",
     "anti-slop/no-chained-type-assertions": "error",
     "anti-slop/no-conditional-empty-object-spread": "error",
     "anti-slop/no-known-value-widening": "error",

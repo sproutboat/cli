@@ -1,14 +1,6 @@
 /**
- * #62 — `sproutboat dev`: the project running on this machine, rebuilt on save.
- *
- * The platform's own local stack (control + edge + supervisor) exists to serve
- * *deployed* artifacts, which are linux-x86_64 and cannot execute on a laptop.
- * This is the other half: build for the host (#62), stand up the same broker
- * the supervisor would, and run the sprout against it — so `env.KV`, secrets,
- * cron and the rest behave the way they will in production without a deploy.
- *
- * Deliberately not the platform: no control plane, no TLS, no routing. One
- * project, one port.
+ * #62: `sproutboat dev`, the project running on this machine and rebuilt on save. Not the platform: no control plane, no
+ * TLS, no routing, one project and one port. It builds for the host and runs the sprout against the same broker the supervisor uses.
  */
 import { existsSync, watch, type FSWatcher } from "node:fs";
 import { randomUUID } from "node:crypto";
@@ -29,27 +21,20 @@ export type DevInput = {
   projectDir: string;
   config: SproutboatConfig;
   sourcePath: string;
-  /** The bundled module (#89) — already validated by the caller. */
   source: string;
   port: number;
-  /** `--ip`: the address the public port listens on. Default 127.0.0.1; 0.0.0.0 makes it reachable on the network. */
   host?: string;
   watch: boolean;
   /** #275: `--env-file` paths (absolute), in order. Default: `.dev.vars`, else the `.env` files. */
   envFiles?: string[];
-  /** #275: `--env <name>`, which selects `.dev.vars.<name>` and the `.env.<name>` files. */
   envName?: string;
-  /** Re-read the complete project after a change; throws with a readable message. */
   rebuild: () => Promise<Pick<DevInput, "config" | "sourcePath" | "source">>;
-  /** Set internally for an asset-only refresh, where recompiling is unnecessary. */
   reuseSproutPath?: string;
   /** Test seam: production always uses the native artifact starter below. */
   candidateFactory?: (input: DevInput, port: number) => Promise<Running>;
   /** Test seam: avoid terminating Bun's test process on a simulated signal. */
   exitOnShutdown?: boolean;
-  /** Clock seam for reload observability tests. */
   now?: () => number;
-  /** Called once a replacement is ready and the stable route has switched. */
   onReload?: (timing: { editToReadyMs: number; downtimeMs: number }) => void;
 };
 
@@ -60,13 +45,8 @@ export function isAssetOnlyRefresh(
   return next.source === current.source && JSON.stringify(next.config) === JSON.stringify(current.config);
 }
 
-/**
- * Secrets for local dev (#275), by Wrangler's rules (env-file.ts): `.dev.vars`
- * or the `.env` files, never both; the process environment only with
- * CLOUDFLARE_INCLUDE_PROCESS_ENV=true. A declared secret with no value, or a
- * skipped line, is a warning and `dev` still starts. Read on every (re)start, so
- * an edited file is picked up.
- */
+/** Secrets for local dev (#275), by Wrangler's rules (env-file.ts): `.dev.vars` or the `.env` files, never both; the process
+ * environment only with CLOUDFLARE_INCLUDE_PROCESS_ENV=true. A declared secret with no value is a warning, and `dev` still starts. */
 export async function devSecrets(
   input: Pick<DevInput, "projectDir" | "envFiles" | "envName" | "config">,
   inherited: Record<string, string | undefined> = process.env,
@@ -82,7 +62,6 @@ export async function devSecrets(
   return resolved.values;
 }
 
-/** `bindings.json` is written by the build whenever the project declares any. */
 async function readBindings(artifactDir: string): Promise<Partial<Bindings> | undefined> {
   const path = resolve(artifactDir, "bindings.json");
   if (!existsSync(path)) return undefined;
@@ -101,17 +80,14 @@ export type Running = {
   /** Set before a kill we initiated, so its exit code is not reported as a crash. */
   expected: boolean;
   port: number;
-  /** Private direct-transfer listener, absent in test candidates. */
   transferPort?: number;
   enableDispatch: () => void;
   disableDispatch: () => void;
 };
 
-/** One browser WebSocket and the connection to the sprout that answers it. */
 type SocketRelay = {
   url: string;
   protocols: string[];
-  /** Frames that arrived before the sprout side finished opening. */
   queued: Array<string | Uint8Array<ArrayBuffer>>;
   upstream?: WebSocket;
 };
@@ -268,7 +244,6 @@ function stop(running: Running): void {
   void rm(running.artifactDir, { recursive: true, force: true });
 }
 
-/** Report a sprout that died on its own; a kill we asked for is not news. */
 function watchExit(running: Running): void {
   void running.sprout.exited.then((code) => {
     if (running.expected || code === 0) return;
@@ -276,9 +251,8 @@ function watchExit(running: Running): void {
   });
 }
 
-/** Pick an unused loopback port without keeping it reserved. The candidate is
- * started immediately afterwards; the tiny race is preferable to interrupting
- * the current server just to discover a bad replacement. */
+/** Pick an unused loopback port without keeping it reserved; the tiny race beats interrupting the current server just to
+ * discover a bad replacement. */
 function candidatePort(): number {
   const probe = Bun.serve({ hostname: "127.0.0.1", port: 0, fetch: () => new Response() });
   const port = probe.port;
@@ -314,7 +288,6 @@ export function tcpReady(port: number, timeout: number): Promise<boolean> {
   });
 }
 
-/** Build, run, and (optionally) rebuild on change. Resolves only on shutdown. */
 export async function runDev(input: DevInput): Promise<void> {
   let current = input;
   const now = input.now ?? Date.now;

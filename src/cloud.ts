@@ -1,8 +1,5 @@
-/**
- * Sproutboat Cloud sessions: endpoint detection, the device-code login (RFC 8628), whoami, logout, and which
- * team a command acts for. Nothing here exits the process or reads the terminal directly, so tests drive it
- * against a fake server with an injected `CloudIo`.
- */
+/** Sproutboat Cloud sessions: endpoint detection, the device-code login (RFC 8628), whoami, logout and the team a command
+ * acts for. Nothing here exits the process or reads the terminal, so tests drive it with an injected `CloudIo`. */
 import { isSafeInteger, isString, jsonObject, parseJsonValue, type JsonObject } from "./json";
 import {
   forgetToken,
@@ -18,18 +15,14 @@ export const DEFAULT_API_URL = "https://dash.sproutboat.com";
 export const CLI_CLIENT_ID = "sproutboat-cli";
 const DEVICE_GRANT = "urn:ietf:params:oauth:grant-type:device_code";
 
-/** A failure with a message fit to print as is. */
 export class CloudError extends Error {}
 
 export type CloudIo = {
   log(line: string): void;
   warn(line: string): void;
-  /** stdin and stdout are terminals: a person is here to answer a prompt. */
   interactive: boolean;
-  /** Open a URL in a browser. False when this machine cannot (headless, SSH, no opener). */
   openUrl(url: string): boolean;
   sleep(ms: number): Promise<void>;
-  /** Pick one of `choices`; only called when `interactive`. */
   choose(question: string, choices: string[]): Promise<string>;
 };
 
@@ -41,7 +34,6 @@ export function parseBody(text: string): JsonObject | undefined {
   }
 }
 
-/** The API's `{error}` text for a failed response, or a short fallback. */
 function errorText(body: JsonObject | undefined, status: number): string {
   const message = body?.error_description ?? body?.error;
   return isString(message) ? message : `HTTP ${status}`;
@@ -73,12 +65,10 @@ export type DeviceLoginOptions = {
   io: CloudIo;
   hostname: string;
   os: string;
-  /** Asks the approval page to preselect this team. */
   account?: string;
   now?: () => number;
 };
 
-/** The RFC 8628 flow: ask for a code, show it, poll until the person approves in a browser. */
 export async function deviceLogin(options: DeviceLoginOptions): Promise<DeviceLoginResult> {
   const { apiUrl, io } = options;
   const now = options.now ?? Date.now;
@@ -171,7 +161,6 @@ export function authHeaders(token: string) {
   return { authorization: `Bearer ${token}` };
 }
 
-/** What a failed API response means to the person at the terminal. */
 export function explainApiFailure(status: number, text: string, fromEnv: boolean): string {
   const body = parseBody(text);
   const detail = errorText(body, status);
@@ -195,7 +184,6 @@ export function explainApiFailure(status: number, text: string, fromEnv: boolean
   return `${detail} (HTTP ${status})`;
 }
 
-/** Ask the Cloud who a key belongs to. */
 export async function fetchWhoami(apiUrl: string, token: string, fromEnv: boolean): Promise<Whoami> {
   const response = await fetchOrExplain(apiUrl, `${apiUrl}/v1/whoami`, { headers: authHeaders(token) });
   const text = await response.text();
@@ -253,10 +241,8 @@ export type CloudSession = { apiUrl: string; token: string; source: TokenSource;
 export type SessionOptions = {
   apiUrl: string;
   io: CloudIo;
-  /** `--account`, then the `account` field of sproutboat.jsonc, already merged by the caller. */
   account?: string;
   env?: Record<string, string | undefined>;
-  /** When logged out in a terminal: run the login (and store it), then continue. */
   login: (account?: string) => Promise<StoredLogin>;
 };
 
@@ -326,7 +312,6 @@ async function teamsOf(apiUrl: string, profile: Profile): Promise<Record<string,
   };
 }
 
-/** Run the device flow and keep the key. */
 export async function loginAndStore(
   options: DeviceLoginOptions,
 ): Promise<StoredLogin & SaveResult & { keyName: string }> {
@@ -337,7 +322,6 @@ export async function loginAndStore(
   return { slug: result.slug, team: result.team, ...saved, keyName: result.keyName };
 }
 
-/** Store a key the person already holds (`login --token`), after asking the Cloud whose it is. */
 export async function storeGivenKey(apiUrl: string, token: string): Promise<StoredLogin> {
   const who = await fetchWhoami(apiUrl, token, false);
   const team: StoredTeam = {
@@ -356,7 +340,6 @@ export type LogoutOutcome =
   | { kind: "none" }
   | { kind: "done"; slug: string; server: "revoked" | "already-gone" | "unreachable"; remaining: string[] };
 
-/** Revoke the key server side when possible, then forget it here. Without `account`, the default team. */
 export async function cloudLogout(apiUrl: string, account?: string): Promise<LogoutOutcome> {
   const profile = await savedProfile(apiUrl);
   if (!profile) return { kind: "none" };

@@ -50,10 +50,8 @@ test("#89: a Node API reached through a dependency is still rejected", async () 
 });
 
 /**
- * #132 — zod v4 declares its own `process(schema, ctx)`. A bare `\bprocess\b`
- * match flagged that local binding as readily as the Node global, refusing
- * any handler that merely imports zod. A platform API is always reached
- * through a member access or `new`; a local function call is neither.
+ * #132: zod v4 declares its own `process(schema, ctx)`, which a bare `\bprocess\b` match flagged as readily as the Node
+ * global. A platform API is always reached through a member access or `new`; a local function call is neither.
  */
 test("#132: a locally-declared process() is not the Node global", () => {
   const result = validateHttpSyncSource(
@@ -153,15 +151,9 @@ test("neutraliseExports rejects a module with no default export", () => {
 });
 
 /**
- * Bun already bundles a working node:url polyfill for free under
- * `target: "browser"`. node:path and node:querystring each need a shim,
- * for different reasons: node:path's bundled resolve() calls
- * process.cwd() with no absolute segment (trips the `process.` ban
- * above); node:querystring's bundled polyfill pulls in Bun's full Buffer
- * implementation internally (trips the `Buffer.` ban). The plugin in
- * bundle.ts swaps in shims for both — this locks in that the resulting
- * bundle both passes the capability check and behaves like the real
- * thing.
+ * node:path and node:querystring each need a shim (bundled resolve() calls process.cwd(), tripping the `process.` ban; the
+ * querystring polyfill pulls in Bun's Buffer, tripping `Buffer.`); node:url's polyfill is free. This locks in that the
+ * bundle passes the capability check and behaves like the real thing.
  */
 test("node:path is shimmed to drop the process.cwd() fallback and still pass validation", async () => {
   const dir = project({
@@ -204,14 +196,9 @@ export default { fetch() { return new Response(JSON.stringify([parse("a=1&b=2&b=
 });
 
 /**
- * Found by actually running a handler through `sproutboat build` (the real
- * Porffor compile), not by auditing the bundle: Bun's node:url polyfill
- * declares `var { URL, URLSearchParams } = globalThis;`, which passes every
- * capability check here (no banned pattern) but Porffor's own compiler
- * rejects it — `URL` is a name Porffor pre-binds as a global, so a second
- * top-level declaration is a parse error, not something a regex audit at
- * this layer could ever catch. The shim avoids declaring anything literally
- * named `URL`/`URLSearchParams`.
+ * Found by running a handler through the real Porffor compile, not by auditing the bundle: Bun's node:url polyfill declares
+ * `var { URL, URLSearchParams } = globalThis;`, which passes every capability check but Porffor rejects, since `URL` is
+ * pre-bound as a global. The shim avoids declaring anything literally named `URL`/`URLSearchParams`.
  */
 test("node:url's URL/URLSearchParams are re-exported without declaring a colliding top-level name", async () => {
   const dir = project({

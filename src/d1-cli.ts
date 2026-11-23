@@ -1,10 +1,7 @@
 /**
- * `sproutboat d1 execute` and `d1 migrations create|list|apply`, with Wrangler's semantics: the target is the local
- * database `dev` uses unless --remote is given, a migration is a numbered .sql file in `migrations/` (or `migrations_dir`),
- * and applied ones are recorded in a `d1_migrations` table, each migration and its tracking row in one transaction.
- *
- * Both targets run the same `Runner`: the local one drives bun:sqlite on the dev database file, the remote one posts
- * to the Cloud's `POST /v1/apps/<app>/d1/<BINDING>/query` (docs/host-data.md in the cloud repo).
+ * `sproutboat d1 execute` and `d1 migrations create|list|apply`, with Wrangler's semantics: the local database `dev` uses
+ * unless --remote, migrations are numbered .sql files recorded in `d1_migrations`, each with its tracking row in one transaction.
+ * Both targets run the same `Runner`; the remote one posts to the Cloud's `POST /v1/apps/<app>/d1/<BINDING>/query`.
  */
 import { existsSync, mkdirSync, readdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
 import { resolve } from "node:path";
@@ -18,10 +15,8 @@ import { bold, dim, ok, rose } from "./style";
 export type Statement = { sql: string; params?: (string | number | boolean | null)[] };
 export type StatementResult = { results: JsonObject[]; success: boolean; meta: JsonObject };
 
-/** Runs statements in one transaction: all of them take effect, or none. A `sql` may be a whole script. */
 export type Runner = { label: string; run(statements: Statement[]): Promise<StatementResult[]> };
 
-/** A statement the database refused; `statement` is the index of the entry that failed. */
 export class D1QueryError extends CloudError {
   constructor(
     message: string,
@@ -39,8 +34,6 @@ const CREATE_MIGRATIONS_TABLE = `CREATE TABLE IF NOT EXISTS ${MIGRATIONS_TABLE} 
   name TEXT UNIQUE,
   applied_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
 )`;
-
-// ---------------------------------------------------------------- arguments
 
 export type D1Flags = {
   command?: string;
@@ -62,7 +55,6 @@ export class D1UsageError extends Error {
   }
 }
 
-/** Split the arguments after `d1 <sub>` into positionals and flags (`--flag value` and `--flag=value`). */
 export function parseD1Flags(args: readonly string[], usage: string) {
   const flags: D1Flags = { json: false, local: false, remote: false, yes: false };
   const positional: string[] = [];
@@ -121,18 +113,14 @@ export function parseD1Flags(args: readonly string[], usage: string) {
   return { positional, flags };
 }
 
-// ---------------------------------------------------------------- the project's databases
-
 export type D1Binding = { binding: string; resourceId?: string };
 
-/** The D1 bindings of sproutboat.jsonc: a bare "DB" or { binding, id }. */
 export function d1Bindings(config: SproutboatConfig): D1Binding[] {
   return (config.d1_databases ?? []).map((entry) =>
     isString(entry) ? { binding: entry } : { binding: entry.binding, resourceId: entry.id },
   );
 }
 
-/** `<database>` is the binding name; a project without that binding says which it has. */
 export function pickBinding(config: SproutboatConfig, database: string): D1Binding {
   const all = d1Bindings(config);
   const found = all.find((entry) => entry.binding === database);
@@ -144,7 +132,6 @@ export function pickBinding(config: SproutboatConfig, database: string): D1Bindi
   );
 }
 
-/** Where `dev` keeps a binding's database: `<state>/d1/<BINDING>.sqlite`, or `<state>/resources/<id>.sqlite` for a pinned one. */
 export function localDatabasePath(projectDir: string, binding: D1Binding, persistTo?: string): string {
   const state = resolve(projectDir, persistTo ?? ".sproutboat/dev");
   return binding.resourceId
@@ -152,9 +139,6 @@ export function localDatabasePath(projectDir: string, binding: D1Binding, persis
     : resolve(state, "d1", `${binding.binding}.sqlite`);
 }
 
-// ---------------------------------------------------------------- runners
-
-/** The dev database file, through bun:sqlite. Created when absent, as Wrangler's local mode does. */
 export function localRunner(path: string): Runner {
   return {
     label: `local database ${path}`,
@@ -209,10 +193,8 @@ export function localRunner(path: string): Runner {
 
 export type Reply = { status: number; body?: JsonObject; headers?: Headers };
 
-/**
- * A remote database through `send`, which posts the request body and returns the status and JSON. `endpoint` names it in
- * messages. A Community control plane has no such route: its 404 becomes "not supported on self-hosted Community yet".
- */
+/** A remote database through `send`. A Community control plane has no such route: its 404 becomes "not supported on
+ * self-hosted Community yet". */
 export function remoteRunner(options: {
   label: string;
   project: string;
@@ -270,17 +252,13 @@ export function remoteRunner(options: {
   };
 }
 
-// ---------------------------------------------------------------- output
-
 export type D1Io = {
   log(line: string): void;
-  /** Progress and notices; stderr when stdout carries JSON. */
   note(line: string): void;
   interactive: boolean;
   confirm(question: string): Promise<boolean>;
 };
 
-/** A plain table: header, rule, rows. Objects print their JSON; null prints as NULL. */
 export function formatTable(rows: JsonObject[]): string {
   if (rows.length === 0) return dim("(no rows)");
   const columns = [...new Set(rows.flatMap((row) => Object.keys(row)))];
@@ -300,8 +278,6 @@ export function formatTable(rows: JsonObject[]): string {
 }
 
 const plural = (count: number, word: string) => `${count} ${word}${count === 1 ? "" : "s"}`;
-
-// ---------------------------------------------------------------- d1 execute
 
 export const EXECUTE_USAGE =
   "d1 execute <database> (--command <sql> | --file <path>) [--json] [--local | --remote] [--persist-to <dir>] [--yes]";
@@ -342,8 +318,6 @@ export async function executeSql(input: ExecuteInput): Promise<StatementResult[]
   return results;
 }
 
-// ---------------------------------------------------------------- migrations
-
 export function migrationFiles(dir: string): string[] {
   if (!existsSync(dir)) return [];
   return readdirSync(dir)
@@ -364,7 +338,6 @@ export const CREATE_USAGE = "d1 migrations create <database> <name>";
 export const LIST_USAGE = "d1 migrations list <database> [--local | --remote] [--persist-to <dir>]";
 export const APPLY_USAGE = "d1 migrations apply <database> [--local | --remote] [--persist-to <dir>]";
 
-/** Create `NNNN_<name>.sql` in the migrations folder, asking before creating the folder itself. */
 export async function createMigration(dir: string, message: string, io: D1Io, now = new Date()): Promise<string> {
   if (message.trim() === "") throw new D1UsageError("the migration needs a name", CREATE_USAGE);
   if (!existsSync(dir)) {
@@ -382,7 +355,6 @@ export async function createMigration(dir: string, message: string, io: D1Io, no
   return name;
 }
 
-/** The names recorded in d1_migrations, in order; none when the table does not exist yet (nothing was ever applied). */
 export async function appliedMigrations(runner: Runner): Promise<string[]> {
   try {
     const [result] = await runner.run([{ sql: `SELECT name FROM ${MIGRATIONS_TABLE} ORDER BY id` }]);

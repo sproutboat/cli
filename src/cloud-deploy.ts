@@ -20,11 +20,8 @@ const PROGRESS =
   /^(\[[^\]]*\]\s*)?(\S+\s+)?(parsed|generated IR|optimi[sz]ed|compiled|linked|assembled|lowered|wrote)\b[^a-z]*$/i;
 const REASON = /error|fail|time(d)? ?out|exceed|reject|unsupported|cannot|can't|not allowed|killed|stopped/i;
 
-/**
- * The one line the final "build failed:" shows: the most informative line of the Cloud's message. A reason beats progress
- * lines, the last reason beats the first (the compiler's own message comes after its warnings), and with no reason at all the
- * first line is shown. The full text stays in the build log above.
- */
+/** The line the final "build failed:" shows: a reason beats progress lines, the last reason beats the first (the compiler's
+ * own message comes after its warnings), and with no reason the first line. The full text stays in the build log above. */
 export function buildFailureHeadline(message: string | undefined): string {
   const lines = (message ?? "")
     .split("\n")
@@ -38,7 +35,6 @@ export function buildFailureHeadline(message: string | undefined): string {
 
 export const hostFor = (project: string, team: string): string => `${project}.${team}.sproutboat.app`;
 
-/** A precompressed copy of a file the Cloud's edge serves to a client that accepts it (manifest `br` and `gz`). */
 type AssetVariant = { hash: string; size: number };
 type CloudAssetEntry = AssetEntry & { br?: AssetVariant; gz?: AssetVariant };
 
@@ -47,22 +43,18 @@ const COMPRESSIBLE = /^(?:text\/|application\/(?:json|javascript|xml|wasm|manife
 const MIN_VARIANT_SOURCE = 1024;
 const MARKDOWN_TYPE = "text/markdown; charset=utf-8";
 
-/** What holds a blob's bytes: a file of the project, or the bytes of a precompressed variant made here. */
 export type AssetBlob = { file: string } | { bytes: Uint8Array };
 export const readAssetBlob = (blob: AssetBlob): Uint8Array<ArrayBuffer> =>
   new Uint8Array("bytes" in blob ? blob.bytes : readFileSync(blob.file));
 
 export type AssetBundle = {
-  /** The manifest JSON as it is uploaded; its sha256 names it. */
   manifestText: string;
   manifestSha: string;
-  /** Blob digest to what holds it. */
   blobs: Map<string, AssetBlob>;
   files: number;
   bytes: number;
 };
 
-/** The same manifest `sproutboat build` writes as assets.json, read straight from the project's assets directory. */
 export function buildAssetBundle(projectDir: string, assets: NonNullable<SproutboatConfig["assets"]>): AssetBundle {
   const dir = resolve(projectDir, assets.directory);
   if (!existsSync(dir))
@@ -116,24 +108,17 @@ export function buildAssetBundle(projectDir: string, assets: NonNullable<Sproutb
   };
 }
 
-/** The platform runtime gates service bindings between Cloud apps behind this compatibility date. */
 export const SERVICE_BINDINGS_MIN_DATE = "2026-11-18";
-/**
- * From this compatibility date a Cloud worker's `env.ASSETS.fetch()` reads the files it has not got in its module from the Cloud's asset store
- * (the same files the deploy uploads and the edge serves), so a deploy no longer warns when they are too big to bake into the module.
- */
+/** From this compatibility date a Cloud worker's `env.ASSETS.fetch()` reads the files not in its module from the Cloud's
+ * asset store, so a deploy no longer warns when they are too big to bake in. */
 export const ASSETS_STORE_MIN_DATE = "2026-11-22";
 
 export type ServiceRef = { binding: string; service: string };
 type ServiceBindingEntry = { name: string; kind: "service"; resource_id: null; config: Record<string, never> };
-/** What the app spec carries for service bindings: the binding entries and the callee app id per binding. */
 export type ServiceWiring = { bindings: ServiceBindingEntry[]; services: Record<string, string> };
 
-/** What a deploy adds to the app spec beyond module, hosts and assets. */
 export type SpecExtras = {
-  /** Service bindings from sproutboat.jsonc (`services`), resolved against the team's Cloud apps before anything is written. */
   services?: ServiceRef[];
-  /** Every other binding in sproutboat.jsonc, mapped by `mapCloudBindings`: sent as `bindings`, `crons` and `queue_consumers`. */
   cloudBindings?: CloudBindings;
   compatibilityDate?: string;
   /**
@@ -143,7 +128,6 @@ export type SpecExtras = {
   secrets?: Record<string, string>;
 };
 
-/** Refuse, before anything is uploaded, a service binding the Cloud would not run: too old a date, or the app itself. */
 export function checkServiceBindings(project: string, services: ServiceRef[], compatibilityDate: string | undefined) {
   if (services.length === 0) return;
   for (const { binding, service } of services)
@@ -157,7 +141,6 @@ export function checkServiceBindings(project: string, services: ServiceRef[], co
     );
 }
 
-/** Match each `service` to the team's Cloud app of that project name (GET /v1/apps); a missing callee fails the deploy. */
 export async function resolveServiceBindings(
   call: CallFn,
   project: string,
@@ -204,14 +187,11 @@ export type CloudDeployPlan = SpecExtras & {
   token: string;
   tokenFromEnv: boolean;
   project: string;
-  /** Routes the deploy adds (the platform name, unless `workers_dev` is false). */
   hosts: string[];
-  /** Routes the deploy takes out (the platform name when `workers_dev` is false); every other route stays. */
   unroute?: string[];
   modulePath: string;
   assets?: AssetBundle;
   noWait: boolean;
-  /** Milliseconds to wait for a host to apply the record. */
   waitMs?: number;
   pollMs?: number;
 };
@@ -220,7 +200,6 @@ export type CloudDeployResult = {
   created: boolean;
   generation: number;
   url: string | undefined;
-  /** The routes the app holds after this deploy, as far as this deploy knows (those it read, plus its own change). */
   routes: string[];
   applied: boolean | "skipped";
 };
@@ -240,7 +219,6 @@ type CallResult = { status: number; text: string; body?: JsonObject; headers: He
 type CallFn = (c: Call) => Promise<CallResult>;
 export type CloudCredentials = Pick<CloudDeployPlan, "apiUrl" | "token" | "tokenFromEnv">;
 
-/** One authenticated call to the Cloud API; a non-2xx status that is not in `ok` becomes a CloudError. */
 export function makeCall(plan: CloudCredentials): CallFn {
   return async (c) => {
     const headers = new Headers(authHeaders(plan.token));
@@ -269,11 +247,9 @@ export const routesAfter = (live: string[], add: string[], remove: string[]): st
 };
 
 /**
- * Send an app spec that adds the deploy's own hosts (the `<project>.<team>.sproutboat.app` name) to the app's routes, or takes
- * it out (`unroute`, when `workers_dev` is false), and touches no other. `hosts` on the Cloud is the whole list, so sending only
- * the default host would unroute every custom domain an operator added; `hosts_patch` leaves the others alone, as
- * `wrangler deploy` leaves dashboard routes when the config declares none. A Cloud that predates `hosts_patch` refuses the key by
- * name; then the live routes (read at the start of this deploy) are merged here and sent as `hosts`.
+ * Add the deploy's own hosts to the app's routes, or take them out (`unroute`), and touch no other: `hosts` is the whole
+ * list, so sending only the default host would unroute every custom domain. A Cloud that predates `hosts_patch` refuses
+ * the key by name; then the live routes read at the start of this deploy are merged here and sent as `hosts`.
  */
 async function sendWithHosts(
   plan: CloudCredentials,
@@ -298,7 +274,6 @@ async function sendWithHosts(
   return call(request({ hosts: routesAfter(live, wanted, unroute) }));
 }
 
-/** What the app holds now: tells a first deploy from an update, keeps its assets when this deploy has none, and lists its routes. */
 async function resolveAssets(
   call: CallFn,
   plan: { project: string; assets?: AssetBundle },
@@ -323,7 +298,6 @@ async function resolveAssets(
   return { created, assetsRef, hosts };
 }
 
-/** Wait for a host to apply `generation`; false at the deadline. */
 export async function waitForApply(
   call: CallFn,
   plan: { project: string; waitMs?: number; pollMs?: number },
@@ -408,12 +382,10 @@ async function pushAssets(call: CallFn, bundle: AssetBundle, io: CloudIo): Promi
 
 export type ModuleInputs = {
   project: string;
-  /** Emits sprout.generated.js for the project and returns its path. */
   emit: () => Promise<string>;
   sproutd?: string;
   generation?: string;
   out: string;
-  /** The bun to run compile-app with. */
   bun: string;
 };
 
@@ -450,12 +422,9 @@ export async function compileModule(input: ModuleInputs): Promise<void> {
     throw new CloudError(`the compiler reported success but wrote no module to ${input.out}`);
 }
 
-// ---- Deploy from source: the Cloud builds the module (docs/builds.md in the cloud repo) ----
-
 /** The Cloud accepts a source of at most 8 MiB. */
 export const SOURCE_MAX_BYTES = 8 * 1024 * 1024;
 
-/** Ctrl-C while the build runs: the build was asked to cancel (exit 130). */
 export class Interrupted extends CloudError {}
 
 type BuildSpec = { assets_manifest_ref?: string } & HostsField & SpecAdditions;
@@ -464,20 +433,15 @@ type BuildCli = { version: string; runtime?: string; toolchain?: string };
 export type BuildPlan = CloudCredentials &
   SpecExtras & {
     project: string;
-    /** Routes the deploy adds (the platform name, unless `workers_dev` is false). */
     hosts: string[];
-    /** Routes the deploy takes out (the platform name when `workers_dev` is false); every other route stays. */
     unroute?: string[];
-    /** The bundled source (sprout.generated.js, the "generated" input kind). */
     sourcePath: string;
     cli: BuildCli;
     assets?: AssetBundle;
     noWait: boolean;
     waitMs?: number;
     pollMs?: number;
-    /** Pause before an event stream is reopened. */
     retryMs?: number;
-    /** Event stream reconnects before falling back to polling. */
     maxReconnects?: number;
   };
 
@@ -486,7 +450,6 @@ export type BuildView = {
   state: string;
   cached: boolean;
   position: number | null;
-  /** Why a queued build is held back (not a failure), e.g. waiting for memory. */
   waiting: string | null;
   error: { code?: string; message: string } | null;
   recordGeneration: number | undefined;
@@ -495,10 +458,8 @@ export type BuildView = {
 
 export type BuildDeployResult = {
   created: boolean;
-  /** Undefined when --no-wait returned before the build finished. */
   generation: number | undefined;
   url: string | undefined;
-  /** The routes the app holds after this deploy, as far as this deploy knows (those it read, plus its own change). */
   routes: string[];
   applied: boolean | "skipped";
   buildId: string;
@@ -536,7 +497,6 @@ export const formatKiB = (bytes: number): string => `${Math.max(1, Math.round(by
 export const formatMB = (bytes: number): string => `${Math.round(bytes / 1048576)} MB`;
 export const formatSeconds = (ms: number): string => `${(ms / 1000).toFixed(1)} s`;
 
-/** The text after the tick: "Built in 4.1 s · peak memory 742 MB (cap 1200 MB)". */
 export function formatBuildSummary(view: BuildView): string {
   if (view.cached) return "Built (cached, identical to an earlier build)";
   const parts: string[] = [];
@@ -553,7 +513,6 @@ export function formatBuildSummary(view: BuildView): string {
       : `Built · ${parts.join(" · ")}`;
 }
 
-/** The "Building" status line for a queued or running build. */
 export function formatBuildState(state: string, position: number | null, waiting: string | null = null): string {
   if (state === "queued") {
     const queued = position === null ? "queued" : `queued (position ${position})`;
@@ -563,7 +522,6 @@ export function formatBuildState(state: string, position: number | null, waiting
   return state;
 }
 
-/** Each line of a log chunk behind the design's "  | " gutter. */
 export function formatLogLines(text: string): string[] {
   return text
     .replace(/\n+$/, "")
@@ -574,10 +532,7 @@ export function formatLogLines(text: string): string[] {
 export type SseFrame = { event: string; id?: string; data: string };
 export type SseParse = { frames: SseFrame[]; rest: string };
 
-/**
- * Split a Server-Sent Events buffer into complete frames (blank-line separated). The unfinished tail comes back
- * as `rest` to be joined with the next chunk. Comment lines (": keepalive") are dropped.
- */
+/** Split a Server-Sent Events buffer into complete frames; the unfinished tail comes back as `rest`. */
 export function parseSseFrames(buffer: string): SseParse {
   const text = buffer.replace(/\r\n/g, "\n");
   const parts = text.split("\n\n");
@@ -604,7 +559,6 @@ export function parseSseFrames(buffer: string): SseParse {
   return { frames, rest };
 }
 
-/** DELETE /v1/builds/<id>: ask the Cloud to cancel. Safe to call on a build that already finished. */
 export async function cancelCloudBuild(credentials: CloudCredentials, id: string): Promise<BuildView> {
   const reply = await makeCall(credentials)({ method: "DELETE", path: `/v1/builds/${id}` });
   return parseBuildView(reply.body);
@@ -612,10 +566,7 @@ export async function cancelCloudBuild(credentials: CloudCredentials, id: string
 
 const TERMINAL = new Set(["ready", "failed", "canceled"]);
 
-/**
- * Follow a build to its end: the event stream (resumed with ?after= when it drops, up to `maxReconnects` times),
- * then plain polling of GET /v1/builds/<id>. Returns the final view.
- */
+/** Follow a build to its end: the event stream (resumed with ?after= when it drops), then plain polling. */
 async function followBuild(
   plan: Pick<BuildPlan, "apiUrl" | "token" | "tokenFromEnv" | "retryMs" | "maxReconnects" | "pollMs">,
   call: CallFn,
@@ -642,7 +593,6 @@ async function followBuild(
     }
     if (response.status === 401 || response.status === 403)
       throw new CloudError(explainApiFailure(response.status, await response.text(), plan.tokenFromEnv));
-    // Any other failure of the stream route: try again, then poll.
     if (!response.ok || !response.body) {
       await response.body?.cancel();
       continue;
@@ -682,7 +632,6 @@ async function followBuild(
       if (error instanceof CloudError) throw error;
       if (signal?.aborted) throw new Interrupted("build canceled");
     }
-    // The stream ended before `done`: reconnect from the last log line seen.
   }
   for (;;) {
     if (signal?.aborted) throw new Interrupted("build canceled");
@@ -693,11 +642,8 @@ async function followBuild(
   }
 }
 
-/**
- * Follow a build that is already running (or finished) by id, from its first log line: what `deployments tail <id>`
- * does, so a deploy that was detached with Ctrl-C can be picked up again. The build is never cancelled here; an abort
- * only stops following (it throws Interrupted).
- */
+/** Follow a build already running (or finished) by id, from its first log line (`deployments tail <id>`). Never cancels
+ * it: an abort only stops following (it throws Interrupted). */
 export async function tailBuild(
   credentials: CloudCredentials,
   id: string,
@@ -745,7 +691,6 @@ async function patchSecretsAfterBuild(
   return next;
 }
 
-/** 503 and 429 from the build request, as plain sentences. */
 function explainBuildRefusal(result: CallResult): string {
   const body = result.body;
   const reason = body?.reason;
@@ -759,10 +704,6 @@ function explainBuildRefusal(result: CallResult): string {
   return message;
 }
 
-/**
- * Deploy from source: upload the bundled source by digest, ask the Cloud to build it, follow the log, and wait for
- * a host to apply the record generation the build wrote.
- */
 export async function buildAndDeploy(plan: BuildPlan, io: CloudIo, signal?: AbortSignal): Promise<BuildDeployResult> {
   const call = makeCall(plan);
   const bytes = new Uint8Array(readFileSync(plan.sourcePath));

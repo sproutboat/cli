@@ -4,10 +4,8 @@ import type { ArtifactManifest } from "./manifest";
 import { bold, dim, leaf, sprout } from "./style";
 import pkg from "../package.json" with { type: "json" };
 
-// `bun build --compile` has no package-relative filesystem at runtime, so the
-// release build injects this via `--define`. Running from source (or the npm
-// package under Bun) falls back to the bundled package.json version — `bun build
-// --compile` inlines the JSON import, so this branch is correct there too.
+// `bun build --compile` has no package-relative filesystem at runtime, so the release build injects this via `--define`.
+// From source (or the npm package under Bun) the bundled package.json version is used instead.
 export const CLI_VERSION = process.env.SPROUTBOAT_CLI_VERSION ?? pkg.version;
 
 function bytes(n: number): string {
@@ -17,7 +15,6 @@ function bytes(n: number): string {
   return `${(kib / 1024).toFixed(2)} MiB`;
 }
 
-/** Minimal box table with a green frame. `align` marks columns to right-pad-left (numbers). */
 function table(headers: string[], rows: string[][], align: boolean[] = []): string {
   const widths = headers.map((h, i) => Math.max(h.length, ...rows.map((r) => (r[i] ?? "").length)));
   const rule = (l: string, m: string, r: string) => leaf(l + widths.map((w) => "─".repeat(w + 2)).join(m) + r);
@@ -39,7 +36,6 @@ function table(headers: string[], rows: string[][], align: boolean[] = []): stri
   ].join("\n");
 }
 
-/** Every binding the compiled sprout will see, flattened to (name, type, detail) rows. */
 function bindingRows(config: SproutboatConfig): string[][] {
   const rows: string[][] = [];
   for (const [name, value] of Object.entries(config.vars ?? {}))
@@ -71,10 +67,7 @@ function bindingRows(config: SproutboatConfig): string[][] {
   return rows;
 }
 
-/**
- * Wrangler-shaped build/deploy summary: what the artifact contains, its upload
- * size, and every binding the handler will see. Returns nothing.
- */
+/** The build/deploy summary: what the artifact contains, its upload size, and every binding the handler will see. */
 export function printDeployReport(
   config: SproutboatConfig,
   manifest: ArtifactManifest,

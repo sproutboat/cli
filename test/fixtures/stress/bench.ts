@@ -1,15 +1,8 @@
 #!/usr/bin/env bun
 /**
- * The baseline: what a standalone sprout costs and how fast it goes.
- *
- *   bun test/fixtures/stress/bench.ts            # print
- *   UPDATE_BASELINE=1 bun test/fixtures/stress/bench.ts   # rewrite BASELINE.md
- *
- * Timings run against a host build on this machine, so they measure the
- * runtime rather than a VPS — treat them as a regression signal, not a
- * capacity plan. The memory figures in BASELINE.md come from Linux, which is
- * the only place RSS means what it says (macOS keeps MADV_FREE pages resident
- * until pressure, and reports roughly twice the truth).
+ * The baseline: what a standalone sprout costs and how fast it goes (`UPDATE_BASELINE=1` rewrites BASELINE.md). Timings
+ * run on a host build here, so they are a regression signal, not a capacity plan. The memory figures come from Linux:
+ * macOS keeps MADV_FREE pages resident until pressure and reports roughly twice the truth.
  */
 import { mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -56,7 +49,6 @@ const built = await buildStandalone({
 });
 const buildMs = Date.now() - buildStarted;
 
-/** Spawn, wait for the socket to accept, kill. Returns milliseconds. */
 async function coldStart(dataDir: string): Promise<number> {
   const p = freePort();
   const t0 = performance.now();
@@ -112,7 +104,6 @@ for (let i = 0; i < 20000; i++) {
 // the first-touch costs the cold-start numbers already cover.
 await fetch(base + "/");
 
-/** Ops per second for a route that performs `ops` binding calls per request. */
 async function rate(path: string, ops: number): Promise<number> {
   await fetch(base + path); // warm
   const t0 = performance.now();
@@ -120,7 +111,6 @@ async function rate(path: string, ops: number): Promise<number> {
   return Math.round(ops / ((performance.now() - t0) / 1000));
 }
 
-/** Requests per second and p99 for a trivial route, at a given concurrency. */
 async function load(concurrency: number, total: number): Promise<{ rps: number; p50: number; p99: number }> {
   const latencies: number[] = [];
   const t0 = performance.now();

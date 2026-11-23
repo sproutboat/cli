@@ -2,10 +2,8 @@ import { expect, test } from "bun:test";
 import { readFile } from "node:fs/promises";
 import { join } from "node:path";
 
-// A Cloud build compiles every app against the shared generation and must reproduce its
-// shared units byte for byte. A free reference to one of these node globals (that the
-// generation's shared prelude does not own) makes the compiler add an import of the node
-// module behind it to the program's shared part, and the builder answers `abi_rejected`
+// A Cloud build must reproduce the shared generation's units byte for byte. A free reference to a node global its shared
+// prelude does not own makes the compiler import the node module behind it, and the builder answers `abi_rejected`
 // (performance.now() did, against ABI b327ad41). Use Date.now() and friends instead.
 const CLOUD_UNSAFE_GLOBALS = [
   "performance",

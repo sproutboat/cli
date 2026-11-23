@@ -1,13 +1,7 @@
 /**
- * The binding conformance checks: every binding, driven over HTTP against a running conformance fixture.
- *
- * The broker-backed harness runs these against a host sprout plus an in-process broker; the standalone harness
- * runs the same list against a single binary with its bindings compiled in. Two implementations of the binding
- * ops is the failure mode that argues against having a second backend at all, and this file is what makes
- * `env.KV.get` mean one thing in both. It used to be part of kitchen-sink's suite; the routes it drives (and
- * the crypto vectors) live in this fixture's src/index.js now, so the kitchen-sink demo carries none of them.
- *
- * Deliberately free of any knowledge of how the app is running: it gets a base URL and a trigger token.
+ * The binding conformance checks: every binding, driven over HTTP against a running conformance fixture. Both the broker
+ * and the standalone harness run this list, so `env.KV.get` means one thing in both. Free of any knowledge of how the app
+ * is running: it gets a base URL and a trigger token.
  */
 import { request as httpRequest } from "node:http";
 import { egressRefusal } from "@sproutboat/runtime";
@@ -47,15 +41,11 @@ async function rawGetFrom(
 }
 
 export type ConformanceOptions = {
-  /**
-   * Skip the checks that post an internal `x-sb-trigger` request. An embedded standalone binary runs its own cron
-   * and queue timers in-process, so there is no broker to impersonate: the behaviour is covered, just not
-   * reachable this way.
-   */
+  /** Skip the checks that post an internal `x-sb-trigger` request: an embedded binary runs its own cron and queue timers
+   * in-process, so there is no broker to impersonate. */
   skipTriggers?: boolean;
   /** Skip the service-binding check: a standalone binary has no edge to route a worker-to-worker call through. */
   skipServices?: boolean;
-  /** Broker-mode ticket URLs are handled by its separate transfer listener. */
   skipDirectTransfer?: boolean;
 };
 

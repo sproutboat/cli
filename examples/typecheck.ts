@@ -1,14 +1,8 @@
 #!/usr/bin/env bun
 /**
- * Every example and every plain-Workers fixture: its worker-configuration.d.ts is what `sproutboat types` would write
- * now, and it typechecks.
- *
- *   bun examples/typecheck.ts           # all of them
- *   bun examples/typecheck.ts kv d1     # just these
- *
- * A project refers to the CLI's types as "sproutboat/types", which a real project finds in node_modules; here the
- * package is this repository, so the script links it as node_modules/sproutboat in each directory that holds
- * projects (git ignores those links).
+ * Every example and plain-Workers fixture: its worker-configuration.d.ts is what `sproutboat types` would write now, and it
+ * typechecks. A project refers to the CLI's types as "sproutboat/types", which a real project finds in node_modules; here
+ * the package is this repository, so the script links it as node_modules/sproutboat (git ignores those links).
  */
 import { existsSync, mkdirSync, symlinkSync } from "node:fs";
 import { join } from "node:path";

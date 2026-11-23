@@ -13,7 +13,6 @@ export const WRANGLER = join(REPO, "node_modules/.bin/wrangler");
 export const WORKERD = join(REPO, "node_modules/.bin/workerd");
 export const TSC = join(REPO, "node_modules/.bin/tsc");
 
-/** The newest compatibility date the installed workerd knows (`workerd 2026-11-10`). */
 export function workerdCompatibilityDate(): string {
   const result = Bun.spawnSync([WORKERD, "--version"]);
   const date = /\b(\d{4}-\d{2}-\d{2})\b/.exec(result.stdout.toString())?.[1];
@@ -28,7 +27,6 @@ export function readConfig(example: string) {
   return { config: parsed.value, path };
 }
 
-/** Write `<dir>/wrangler.jsonc` (and `.dev.vars` for secrets) for `example`; returns the config's path. */
 export function writeWranglerProject(
   example: string,
   dir: string,
@@ -53,10 +51,8 @@ export function writeWranglerProject(
   return target;
 }
 
-/**
- * `wrangler d1 migrations apply --local` for every database of the config that has a migrations folder, into the same
- * state directory `wrangler dev --persist-to` will read. Returns wrangler's output when one fails, empty when all pass.
- */
+/** `wrangler d1 migrations apply --local` for every database with a migrations folder, into the state directory `wrangler dev
+ * --persist-to` will read. Returns wrangler's output when one fails. */
 export async function applyWranglerMigrations(config: string, cwd: string, state: string): Promise<string> {
   // SAFETY: the file is the JSON writeWranglerProject wrote a moment ago, in WranglerConfig's shape.
   const written = JSON.parse(readFileSync(config, "utf8")) as WranglerConfig;
@@ -85,11 +81,8 @@ const alive = (pid: number) => {
   }
 };
 
-/**
- * Stop `pid` and everything it started. `wrangler dev` forks a process tree (its own workers and workerd), and
- * stopping only the parent leaves those running, reparented to init. So the tree is read first, while it is still
- * attached, and every recorded pid is stopped: politely, then for good. Only pids found under `pid`, never by name.
- */
+/** Stop `pid` and everything it started: `wrangler dev` forks a process tree, and stopping only the parent leaves the rest
+ * running. The tree is read first, while attached, and every recorded pid stopped, politely then for good; never by name. */
 export async function stopTree(pid: number): Promise<void> {
   const tree = [pid, ...descendantPids(pid)];
   for (const member of tree) {
@@ -107,7 +100,6 @@ export async function stopTree(pid: number): Promise<void> {
   }
 }
 
-/** The environment for wrangler: nothing written outside `dir`, no telemetry, no prompts. */
 export function wranglerEnv(dir: string) {
   return {
     ...process.env,
@@ -121,11 +113,8 @@ export function wranglerEnv(dir: string) {
   };
 }
 
-/**
- * Typecheck the example's entry against Cloudflare's runtime types, which is what `wrangler types` generates from the
- * same bindings: no Sproutboat declaration is in this program, so an API only Sproutboat has is an error.
- * Returns tsc's output, empty when it passes.
- */
+/** Typecheck the entry against Cloudflare's runtime types with no Sproutboat declaration in the program, so an API only
+ * Sproutboat has is an error. Returns tsc's output. */
 export async function typecheckAgainstCloudflare(
   example: string,
   dir: string,

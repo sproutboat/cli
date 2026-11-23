@@ -1,21 +1,7 @@
 /**
- * Lifecycle for the native conformance harnesses (#276).
- *
- * The kitchen-sink harnesses and the small-example smoke runner drive a native
- * child over HTTP. Without a deadline, a child that accepts a connection and
- * never finishes the response leaves the run waiting forever, and an
- * interrupted run leaves the child and its temp dir behind. This module gives
- * them one shared answer:
- *
- * - every HTTP and raw-socket operation has a deadline (`SB_HARNESS_REQUEST_TIMEOUT_MS`);
- * - the current step is recorded before it starts, so a stall names it;
- * - readiness (`SB_HARNESS_READY_TIMEOUT_MS`) and compilation
- *   (`SB_HARNESS_BUILD_TIMEOUT_MS`) have their own deadlines, so a slow build
- *   cannot look like a hung handler;
- * - a failure prints the step, backend, versions and the child's recent stderr
- *   with declared secret values removed;
- * - cleanup stops only this process's own children and removes only its own
- *   temp dir, on failure, on SIGINT and on SIGTERM.
+ * Lifecycle for the native conformance harnesses (#276). Without a deadline, a child that never finishes a response leaves the
+ * run waiting forever, and an interrupted run leaves the child and its temp dir behind. Every HTTP and raw-socket operation
+ * has a deadline, the current step is recorded so a stall names it, and cleanup stops only this process's own children.
  */
 import { mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -26,7 +12,6 @@ export const DEFAULT_READY_TIMEOUT_MS = 20_000;
 export const DEFAULT_BUILD_TIMEOUT_MS = 900_000;
 const STDERR_TAIL_BYTES = 8 * 1024;
 
-/** A positive integer number of milliseconds from the environment, or `fallback`. */
 export function readDeadline(name: string, fallback: number, env: Record<string, string | undefined> = process.env) {
   const raw = env[name];
   if (raw === undefined || raw === "") return fallback;
@@ -49,22 +34,17 @@ export class HarnessFailure extends Error {
   }
 }
 
-/** What a failure can be: a harness failure, another Error, or a plain message. */
 export type HarnessError = Error | string;
 
 export type HarnessOptions = {
-  /** "broker", "standalone", "smoke:<example>": named in every failure report. */
   backend: string;
   /** Secret values that may appear in child output; removed from reports. */
   secrets?: string[];
   requestTimeoutMs?: number;
   readyTimeoutMs?: number;
   buildTimeoutMs?: number;
-  /** Prefix for the temp dir. */
   prefix?: string;
-  /** Install SIGINT and SIGTERM handlers. Default true. */
   handleSignals?: boolean;
-  /** Print each step as it starts. Default: when stderr is a terminal or SB_HARNESS_VERBOSE=1. */
   announceSteps?: boolean;
 };
 
@@ -93,7 +73,6 @@ export function versionSummary() {
   };
 }
 
-/** Direct and indirect children of this process, from one `ps` snapshot. */
 export function descendantPids(root = process.pid): number[] {
   const ps = Bun.spawnSync(["ps", "-A", "-o", "pid=,ppid="], { stdout: "pipe", stderr: "ignore" });
   if (ps.exitCode !== 0) return [];
@@ -154,7 +133,6 @@ export class Harness {
     }
   }
 
-  /** Record the step before starting it, so a stall names what it was doing. */
   step(name: string): void {
     this.currentStep = name;
     if (this.announce) console.error(`  .. ${name}`);
@@ -170,7 +148,6 @@ export class Harness {
     return out;
   }
 
-  /** Start a child this harness owns. Its stderr tail is kept for failure reports. */
   spawn(
     name: string,
     command: string[],
@@ -178,7 +155,6 @@ export class Harness {
       env?: Record<string, string | undefined>;
       cwd?: string;
       stdout?: "pipe" | "inherit" | "ignore";
-      /** Also write the child's stderr to this process's stderr as it arrives. */
       tee?: boolean;
     } = {},
   ): ReturnType<typeof Bun.spawn> {
@@ -206,7 +182,6 @@ export class Harness {
     return child;
   }
 
-  /** The recent stderr of every child, with declared secrets removed. */
   recentStderr(): string {
     return this.watched
       .map(({ name, tail }) => {
@@ -217,7 +192,6 @@ export class Harness {
       .join("\n");
   }
 
-  /** Resolves with a failure when any watched child exits, so a wait never outlives its child. */
   private childExit() {
     let cancelled = false;
     const promise = new Promise<never>((_, reject) => {
@@ -238,10 +212,7 @@ export class Harness {
     return { promise, cancel: () => (cancelled = true) };
   }
 
-  /**
-   * Run `work` under a deadline. `work` gets an AbortSignal that fires at the
-   * deadline; the race also ends when a watched child exits.
-   */
+  /** Run `work` under a deadline; the race also ends when a watched child exits. */
   async bounded<T>(
     kind: "request-timeout" | "ready-timeout" | "build-timeout",
     label: string,
@@ -285,11 +256,8 @@ export class Harness {
     }
   }
 
-  /**
-   * `fetch` with a deadline over the whole exchange, body included: the
-   * response is read to the end before it is returned, so a server that sends
-   * headers and never completes the body fails here, not in the caller.
-   */
+  /** `fetch` with a deadline over the whole exchange, body included, so a server that sends headers and never completes the
+   * body fails here, not in the caller. */
   async fetch(url: string, init: RequestInit = {}): Promise<Response> {
     return this.bounded(
       "request-timeout",
@@ -310,7 +278,6 @@ export class Harness {
     );
   }
 
-  /** One raw TCP exchange: write `request`, read until the peer closes. Deadline applies. */
   async rawExchange(host: string, port: number, request: string): Promise<{ reply: string; closed: boolean }> {
     return this.bounded("request-timeout", `raw socket ${host}:${port}`, this.requestTimeoutMs, (signal) => {
       return new Promise((resolve, reject) => {
@@ -344,7 +311,6 @@ export class Harness {
     });
   }
 
-  /** Wait for `url` to answer, bounded separately from the build and from later requests. */
   async waitReady(url: string): Promise<void> {
     this.step(`waiting for ${new URL(url).host} to listen`);
     const deadline = Date.now() + this.readyTimeoutMs;
@@ -373,13 +339,11 @@ export class Harness {
     );
   }
 
-  /** Bound a build or compile step separately from readiness and requests. */
   async build<T>(label: string, work: () => Promise<T>): Promise<T> {
     this.step(label);
     return this.bounded("build-timeout", label, this.buildTimeoutMs, () => work(), { watchChildren: false });
   }
 
-  /** The text printed for a failure: step, backend, versions and recent child stderr. */
   report(error: HarnessError): string {
     const message = error instanceof Error ? error.message : String(error);
     const kind = error instanceof HarnessFailure ? error.kind : "failed";
@@ -406,10 +370,7 @@ export class Harness {
     }
   }
 
-  /**
-   * Stop this process's own children (the spawned ones and anything they or a
-   * build started, found by parent pid, never by name) and remove the temp dir.
-   */
+  /** Stop this process's own children (found by parent pid, never by name) and remove the temp dir. */
   cleanupSync(options: { descendants?: boolean } = {}): void {
     if (this.cleaned) return;
     this.cleaned = true;
@@ -425,7 +386,6 @@ export class Harness {
     for (const [signal, handler] of this.onSignal) process.off(signal, handler);
   }
 
-  /** Wait for the children to be gone, then clean up. */
   async cleanup(options: { descendants?: boolean } = {}): Promise<void> {
     this.stopChildren();
     await Promise.all(this.watched.map(({ child }) => child.exited));

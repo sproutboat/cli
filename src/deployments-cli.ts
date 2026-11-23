@@ -1,9 +1,7 @@
 /**
- * `sproutboat deployments list | status | tail <id>`. On the Cloud a deployment is a build (the deploy-from-source flow):
- * `GET /v1/apps/<app>/builds` lists them, `GET /v1/apps/<app>` says what is live, and `tail` follows one build's event
- * stream server-side, which is what a deploy that was detached with Ctrl-C needs. On self-hosted Community a deployment is a
- * version of the project (`/api/projects/<app>/deployments`), and there is nothing to follow: a deploy there is finished
- * when the command returns.
+ * `sproutboat deployments list | status | tail <id>`. On the Cloud a deployment is a build, and `tail` follows one build's
+ * event stream server-side (what a deploy detached with Ctrl-C needs). On Community it is a version of the project, and
+ * there is nothing to follow.
  */
 import { makeCall, parseBuildView, type BuildView, type CloudCredentials } from "./cloud-deploy";
 import { isSafeInteger, isString, jsonObject, type JsonObject } from "./json";
@@ -24,7 +22,6 @@ export class DeploymentsUsageError extends Error {
   }
 }
 
-/** Positionals and flags after `deployments <sub>`. */
 export function parseDeploymentsArgs(args: readonly string[], usage: string) {
   const flags: DeploymentsFlags = { json: false, limit: LIST_LIMIT };
   const positional: string[] = [];
@@ -54,7 +51,6 @@ export type Live = {
   hosts: string[];
 };
 
-/** What the Cloud runs for an app now: the record generation, whether a host applied it, and its hostnames. */
 export function parseLive(body: JsonObject | undefined): Live {
   const apply = jsonObject(body?.apply ?? null);
   const spec = jsonObject(body?.spec ?? null);
@@ -78,7 +74,6 @@ export type CloudDeployment = {
   hosts: string[];
   wallMs: number | null;
   error: string | null;
-  /** The build whose record generation the host has applied. */
   live: boolean;
 };
 
@@ -150,11 +145,8 @@ export function formatStatus(project: string, live: Live | null, latest: CloudDe
   return lines.join("\n");
 }
 
-// ---------------------------------------------------------------- self-hosted Community
-
 export type CommunityVersion = { id: string; artifact: string; deployedAt: string; active: boolean };
 
-/** `GET /api/projects/<app>/deployments`: an array of { id, artifact, deployedAt, active }. */
 export function parseCommunityVersions(value: JsonObject[]): CommunityVersion[] {
   return value.flatMap((item) =>
     isString(item.id) && isString(item.artifact) && isString(item.deployedAt)
@@ -173,8 +165,6 @@ export function formatCommunityVersion(item: CommunityVersion): string {
 
 export const COMMUNITY_TAIL =
   "deployments tail is not supported on self-hosted Community: a deploy there finishes before `sproutboat deploy` returns, so there is nothing to follow (see `sproutboat versions list` for past deploys)";
-
-// ---------------------------------------------------------------- tail
 
 export function tailSummary(view: BuildView): string {
   if (view.state === "ready")

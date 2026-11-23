@@ -1,15 +1,7 @@
 /**
- * #212 — compat harness for the node:* shims in node-shims.ts.
- *
- * Deno's model for this is vendoring nodejs/node's own test/parallel/*.js
- * files verbatim plus a reduced `common.js`. That's the right call for a
- * runtime porting dozens of built-ins; it's overkill for the two shims
- * here (~15 functions total) — a hand-written comparison table against
- * the real built-ins, runnable under both `bun test` and `node --test`
- * (both ship node:test/node:assert — the same dual-run trick Deno's
- * harness is built on), gets the same "does this behave like Node"
- * confidence at a fraction of the machinery. Extend this table rather
- * than reaching for vendored fixtures unless a shim's surface grows a lot.
+ * #212: compat harness for the node:* shims in node-shims.ts. A hand-written comparison table against the real built-ins,
+ * runnable under both `bun test` and `node --test`, is enough for these few functions; extend it rather than vendoring
+ * Node's own tests unless a shim's surface grows a lot.
  */
 import assert from "node:assert/strict";
 import * as realPath from "node:path";
@@ -17,10 +9,8 @@ import * as realQuerystring from "node:querystring";
 import { test } from "node:test";
 import * as realUrl from "node:url";
 
-// A literal "./node-shims.ts" specifier resolves fine under `node --test`
-// but trips tsc's `moduleResolution: bundler` extension check; building
-// the specifier avoids tsc statically resolving (and rejecting) it while
-// still resolving correctly at runtime under both Bun and Node.
+// A literal "./node-shims.ts" specifier works under `node --test` but trips tsc's `moduleResolution: bundler` extension
+// check; building the specifier avoids tsc resolving it statically.
 async function loadShim(specifier: string): Promise<any> {
   const { NODE_SHIMS } = await import(["./node-shims", "ts"].join("."));
   const source = NODE_SHIMS[specifier];
@@ -63,10 +53,8 @@ test("node:path shim matches real node:path for cwd-independent operations", asy
       assert.equal(shimPath.relative(from, to), realPath.relative(from, to), `relative(${from}, ${to})`);
   }
 
-  // resolve() intentionally diverges: no real filesystem/cwd in a compiled
-  // handler, so the shim grounds an all-relative resolve() at a fixed
-  // virtual root ("/") instead of process.cwd(). Assert that documented
-  // behavior directly rather than against real Node's cwd-dependent value.
+  // resolve() intentionally diverges: a compiled handler has no cwd, so the shim grounds an all-relative resolve() at a
+  // fixed "/" instead of process.cwd(). Assert that directly rather than against Node's cwd-dependent value.
   assert.equal(shimPath.resolve("x/y"), "/x/y");
   assert.equal(shimPath.resolve("/x", "y"), realPath.resolve("/x", "y"));
 });
@@ -93,12 +81,8 @@ test("node:querystring shim matches real node:querystring", async () => {
   }
 });
 
-/**
- * The URL/URLSearchParams re-export is by construction identical to the
- * global (see node-shims.ts) — the real value here is checking the
- * hand-written legacy parse/format/resolve against Node's real
- * implementation for the common absolute-URL case they're scoped to.
- */
+/** The URL/URLSearchParams re-export is identical to the global by construction; the value here is checking the
+ * hand-written legacy parse/format/resolve against Node's for the common absolute-URL case. */
 test("node:url shim matches real node:url for absolute URLs", async () => {
   const shimUrl = await loadShim("node:url");
   assert.equal(shimUrl.URL, globalThis.URL);
@@ -106,10 +90,8 @@ test("node:url shim matches real node:url for absolute URLs", async () => {
 
   const urls = ["http://example.com/a/b?q=1", "https://user:pass@example.com:8080/p", "http://example.com/"];
   for (const href of urls) {
-    // Real Node's parse() returns a `Url` class instance; the shim returns
-    // a plain object with the same fields. Spreading strips the prototype
-    // difference so the comparison is field-by-field, which is what every
-    // realistic consumer of the legacy API actually reads.
+    // Node's parse() returns a `Url` instance; the shim returns a plain object. Spreading strips the prototype so the
+    // comparison is field by field, which is what consumers of the legacy API read.
     assert.deepEqual({ ...shimUrl.parse(href) }, { ...realUrl.parse(href) }, `parse(${JSON.stringify(href)})`);
     assert.equal(shimUrl.format(new shimUrl.URL(href)), realUrl.format(new realUrl.URL(href)), `format(${href})`);
   }

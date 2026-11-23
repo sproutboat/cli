@@ -1,19 +1,7 @@
 /**
- * Build platform package executable(s). npm's tiny root launcher resolves one
- * of these at install time.
- *
- * Default (no args): build the host's own target only — what CI's per-platform
- * matrix runners want, one native build each, no cross-compilation involved.
- *
- * `--all`: cross-compile all four targets from this one machine (`bun build
- * --compile` can target any `bun-<os>-<arch>` regardless of host — verified
- * against real Linux/macOS output, not just docs). For a maintainer building
- * every platform package locally without waiting on CI.
- *
- * `--target <os>-<arch>`: build exactly one named target, host or not. CI's
- * darwin-x64 leg uses this to cross-build on an arm64 macOS runner, because
- * GitHub's only x64 macOS image (`macos-13`) routinely sits queued for half an
- * hour while every other leg finishes in one minute.
+ * Build platform package executable(s); npm's root launcher resolves one at install time. No args: the host's own target.
+ * `--all`: cross-compile all four. `--target <os>-<arch>`: exactly one, as CI's darwin-x64 leg does on an arm64 runner,
+ * because GitHub's only x64 macOS image routinely sits queued for half an hour.
  */
 import { chmod, copyFile, mkdir, rm } from "node:fs/promises";
 import { resolve } from "node:path";
@@ -65,12 +53,9 @@ async function buildOne(target: Target): Promise<void> {
     { cwd: root, stdout: "inherit", stderr: "inherit" },
   );
   if ((await child.exited) !== 0) throw new Error(`compile failed for ${target.platform}-${target.arch}`);
-  // The compressed archive (~50 MB), not the ~400 MB extracted install: Zig's
-  // lib/ carries libc/libc++ sources for every target it can cross-compile to,
-  // which only matters once, on extract. `ensureZig` (src/toolchain.ts) looks
-  // for this file next to the running executable before ever hitting the
-  // network, and extracts it into the ordinary toolchain cache on first use --
-  // same shape as the vendored uWebSockets archive.
+  // The compressed archive (~50 MB), not the ~400 MB extracted install: Zig's lib/ carries libc sources for every target,
+  // which only matters once, on extract. `ensureZig` (src/toolchain.ts) looks for this file next to the executable before
+  // the network, as with the vendored uWebSockets archive.
   await copyFile(await ensureZigArchive(target.zigPlatform), resolve(packageDir, "bin", "zig.tar.xz"));
   await copyFile(resolve(root, "THIRD_PARTY_NOTICES.md"), resolve(packageDir, "THIRD_PARTY_NOTICES.md"));
   await chmod(out, 0o755);

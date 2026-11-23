@@ -1,19 +1,7 @@
 /**
- * Flags that every command accepts, parsed in one place and removed from argv before a command sees it.
- * Semantics follow Wrangler's global flags:
- *
- *   -c, --config <file>   the project's config file (its directory is the project directory)
- *       --cwd <dir>       run as if started in <dir>
- *   -e, --env <name>      environment: selects .dev.vars.<name> and the .env.<name> files
- *       --env-file <file> repeatable; values from later files override earlier ones
- *       --profile <name>  the credential profile (also SPROUTBOAT_PROFILE)
- *       --api-url <url>   the control plane (also SPROUTBOAT_API_URL); only for commands that talk to one
- *   -v, --version         print the version
- *
- * They can sit anywhere on the line, before or after the command, as `--flag value` or `--flag=value`. A
- * repeated single-value flag takes its last value (a script's fixed flags can be overridden by appending).
- * Everything after a bare `--` is left alone, and so is the value of a flag whose value is free text.
- * `-h/--help` stays in the arguments: the command decides what to print.
+ * Flags every command accepts, parsed in one place and removed from argv before a command sees it, with Wrangler's semantics
+ * (-c/--config, --cwd, -e/--env, --env-file, --profile, --api-url, -v). A repeated single-value flag takes its last value.
+ * Everything after a bare `--` is left alone, and `-h/--help` stays in the arguments: the command decides what to print.
  */
 import { dirname, resolve } from "node:path";
 
@@ -21,7 +9,6 @@ export type GlobalFlags = {
   config?: string;
   cwd?: string;
   env?: string;
-  /** Every `--env-file`, in the order given. */
   envFiles: string[];
   profile?: string;
   /** `--api-url`: taken out here so every command that talks to a control plane honours it, in both forms. */
@@ -45,7 +32,6 @@ const VALUE_FLAGS: readonly Spec[] = [
 /** Per-command flags whose value is free text: it must never be read as a global flag (`--value -e`). */
 const FREE_TEXT_FLAGS = new Set(["--value", "--token", "--search", "--outcome", "--name", "--command"]);
 
-/** Split argv into the global flags and what is left for the command. Does not touch the filesystem. */
 export function extractGlobalFlags(argv: readonly string[]): GlobalParse {
   const flags: GlobalFlags = { envFiles: [], version: false };
   const rest: string[] = [];
@@ -80,7 +66,6 @@ export function extractGlobalFlags(argv: readonly string[]): GlobalParse {
   return { flags, rest };
 }
 
-/** The global flags of this run. Set once by `main.ts` before any command runs. */
 let current: GlobalFlags = { envFiles: [], version: false };
 
 export function setGlobalFlags(flags: GlobalFlags): void {
@@ -93,7 +78,6 @@ export function globalFlags(): GlobalFlags {
 
 export type ProjectLocation = { directory: string; configPath: string };
 
-/** What `--config` and a positional project directory say, together. */
 export function locateProject(
   positional: string | undefined,
   config: string | undefined = current.config,

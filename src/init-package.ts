@@ -39,16 +39,13 @@ export function runScriptCommand(manager: PackageManager, script: string): strin
 }
 
 export type PackagePlan = {
-  /** Serialized package.json to write. */
   text: string;
   created: boolean;
   addedDependency: boolean;
   addedScripts: string[];
-  /** Existing scripts left alone because the name was taken. */
   skippedScripts: string[];
 };
 
-/** Throws on a package.json that is not a JSON object, before anything is written. */
 export function planPackageJson(name: string, existing: string | undefined, cliVersion: string): PackagePlan {
   const range = `^${cliVersion}`;
   let pkg: JsonObject;

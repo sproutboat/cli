@@ -1,19 +1,13 @@
 /**
- * The machines a binary can be built for.
- *
- * `linux-x86_64` is the deploy target (static musl, the one `deploy` accepts). `linux-arm64` is the
- * same static musl build for an aarch64 box (a Raspberry Pi, Graviton, Ampere, an Apple-silicon
- * Linux VM) and exists for `--standalone` only: the platform runs x86_64. `host` is this machine.
+ * The machines a binary can be built for. `linux-x86_64` is the deploy target (static musl); `linux-arm64` is the same
+ * build for an aarch64 box and exists for `--standalone` only, since the platform runs x86_64.
  */
 export type LinuxTarget = "linux-x86_64" | "linux-arm64";
 export type BuildTarget = LinuxTarget | "host";
 
 type LinuxInfo = {
-  /** Zig and uSockets name for the architecture. */
   arch: "x86_64" | "aarch64";
-  /** The Zig target triple: a static binary needs no libc on the box. */
   triple: string;
-  /** Container platform for `docker --platform`. */
   platform: "linux/amd64" | "linux/arm64";
 };
 
@@ -33,7 +27,6 @@ const ALIASES = new Map<string, BuildTarget>([
   ["aarch64-linux", "linux-arm64"],
 ]);
 
-/** `--target` value to a build target; undefined when it names none. */
 export function parseTarget(value: string | undefined): BuildTarget | undefined {
   return value === undefined ? undefined : ALIASES.get(value);
 }

@@ -47,6 +47,7 @@
     "prepare": "lefthook install || true",
     "typecheck": "tsc --noEmit",
     "lint": "oxlint .",
+    "check:comments": "bun scripts/check-comment-only.ts",
     "examples": "bun examples/smoke.ts",
     "examples:types": "bun examples/typecheck.ts",
     "examples:workerd": "bun examples/workerd.ts",

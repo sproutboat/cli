@@ -1,11 +1,7 @@
 /**
- * The two backends a fixture is held to, as functions: the broker (a host sprout beside an in-process broker, the
- * shape the supervisor runs in production) and a standalone binary (one executable with the bindings inside it).
- *
- * `kitchen-sink/harness*.ts` and `conformance/harness*.ts` are a few lines each: they say which directory, which
- * secrets and which checks, and these functions do the rest, so the lifecycle code (deadlines, a step recorded
- * before each request, a failure report with the backend and versions, cleanup of this run's own children) exists
- * once. Both exit the process: 0 when every check passed, 1 with a report when one did not.
+ * The two backends a fixture is held to: the broker (a host sprout beside an in-process broker, as the supervisor runs it) and
+ * a standalone binary. The harness entries only say which directory, secrets and checks; the lifecycle code (deadlines,
+ * steps, failure reports, cleanup of this run's own children) exists once here. Both exit the process: 0 pass, 1 with a report.
  */
 import { cpSync, existsSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
@@ -23,17 +19,11 @@ import { ensureBearssl } from "../../../src/bearssl";
 export type CheckFn = (name: string, cond: boolean, detail?: JsonValue) => void;
 
 export type Fixture = {
-  /** The fixture's directory (`import.meta.dir` of the harness entry). */
   dir: string;
-  /** Named in the output and the temp dir. */
   label: string;
-  /** The value of the declared ADMIN_TOKEN secret. */
   adminToken: string;
-  /** Runs before anything is built: the dashboard's UI, for kitchen-sink. */
   prepare?: () => void;
-  /** The vars the checks need set on top of the config's, given the stub upstream's `host:port`. */
   vars?: (upstreamHost: string) => Record<string, string>;
-  /** The checks. `check` reports, and aborts the run on a failure. */
   run: (context: RunContext) => Promise<void>;
 };
 
@@ -48,7 +38,6 @@ export type RunContext = {
   backend: "broker" | "standalone";
 };
 
-/** A port nothing is listening on: bind to 0, let the OS choose, and release it. */
 function freePort(): number {
   const probe = Bun.listen({ hostname: "127.0.0.1", port: 0, socket: { data() {} } });
   const chosen = probe.port;
@@ -132,7 +121,6 @@ function bindingsOf(config: SproutboatConfig): Bindings {
   };
 }
 
-/** The broker backend: compiles the sprout for the host, stands up an in-process broker and a stub upstream, drives the fixture. */
 export async function runBroker(fixture: Fixture): Promise<never> {
   const token = "harness-token";
   const { harness, cleanup, die, check, finish } = lifecycle(fixture, "broker", [fixture.adminToken, token]);
@@ -143,7 +131,6 @@ export async function runBroker(fixture: Fixture): Promise<never> {
   const upstreamHost = `127.0.0.1:${upstream.port}`;
   const vars = { ...config.vars, ...fixture.vars?.(upstreamHost) };
 
-  // Publish the assets directory and its manifest exactly as `sproutboat build` would.
   fixture.prepare?.();
   const assetsDir = join(harness.workdir, "assets");
   if (config.assets) {
@@ -203,10 +190,9 @@ export async function runBroker(fixture: Fixture): Promise<never> {
     secrets: { ADMIN_TOKEN: fixture.adminToken },
     sproutUrl: `http://127.0.0.1:${sproutPort}/`,
     assetsDir,
-    // #48: on a node the control plane resolves a service name to a hostname and the edge routes it. There is no
-    // edge here, so the broker is pointed at the stub upstream, which stands in for the peer. A service binding must
-    // reach a different deployment (one sprout serves one turn at a time, so a binding to this app would deadlock);
-    // the path under test is shim -> broker -> Host header either way.
+    // #48: on a node the control plane resolves a service name to a hostname and the edge routes it. There is no edge here, so
+    // the broker is pointed at the stub upstream as the peer. A binding to this app would deadlock (one sprout serves one turn
+    // at a time), so it must reach a different deployment.
     services: { PEER: "quote-service.local" },
     edgeUrl: `http://${upstreamHost}/`,
     // The stub upstream is on loopback, which fetch() refuses (#174). Let exactly that address through, as an
@@ -236,7 +222,6 @@ export async function runBroker(fixture: Fixture): Promise<never> {
   return finish(`${fixture.label}: every check passed on the broker backend.`);
 }
 
-/** The standalone backend: one executable with the bindings compiled in, driven by the same checks. */
 export async function runStandalone(fixture: Fixture): Promise<never> {
   const { harness, cleanup, die, check, finish } = lifecycle(fixture, "standalone", [fixture.adminToken]);
   const config = readConfig(fixture.dir);
@@ -255,7 +240,6 @@ export async function runStandalone(fixture: Fixture): Promise<never> {
   const bundle = await bundleHandler(sourcePath, fixture.dir);
 
   console.log("building the standalone binary…");
-  // Compilation has its own deadline (SB_HARNESS_BUILD_TIMEOUT_MS), so a slow build cannot look like a hung handler.
   const built = await harness
     .build("compiling the standalone binary", () =>
       buildStandalone({

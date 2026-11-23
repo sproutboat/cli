@@ -15,32 +15,19 @@ export type Command = {
   name: string;
   /** Other names that run the same command (`secret` for `secrets`, as in Wrangler). */
   aliases?: readonly string[];
-  /** Full argument grammar — used by SURFACE.md and the one-line usage string. */
   args: string;
-  /** Short argument hint shown in the grouped help list (falls back to `args`). */
   brief?: string;
   group: Group;
   emoji: string;
-  /** One short line (about 60 characters) for the grouped help list. Detail lives in `summary`, shown by `<command> --help`. */
   short: string;
   summary: string;
 };
 
-/**
- * The storage products. Each is its own command with the same five verbs over
- * its own `/api/<segment>` collection.
- *
- * Wrangler nests two of its four (`kv namespace create`, `r2 bucket create`)
- * and leaves `d1 create` and `queues create` flat. That nesting separates a
- * container from its contents, which the verb already does — so ours are
- * uniform, and contents take their own noun when they exist (`kv key get`).
- */
+/** The storage products: each is its own command with the same five verbs over its own `/api/<segment>` collection.
+ * Wrangler nests two of its four (`kv namespace create`); ours are uniform, and contents take their own noun. */
 export type StorageProduct = {
-  /** Command name, URL segment, and the dashboard's product page. */
   name: "kv" | "d1" | "r2" | "queues";
-  /** One of them, for buttons and messages: "namespace", "bucket". */
   noun: string;
-  /** Many of them, for list output and empty states. */
   plural: string;
   emoji: string;
 };
@@ -52,12 +39,10 @@ export const STORAGE_PRODUCTS: readonly StorageProduct[] = [
   { name: "queues", noun: "queue", plural: "queues", emoji: "📨" },
 ];
 
-/** Every storage product answers to exactly these, in this order. */
 export const STORAGE_VERBS = ["list", "create", "info", "rename", "delete"] as const;
 
 const STORAGE_ARGS = "<list | create <name> | info <name> | rename <name> <new> | delete <name>>";
 
-/** What each storage command offers, in the words the grouped help uses. */
 const STORAGE_SHORT = {
   kv: "Manage KV namespaces, keys, bulk data and exports",
   d1: "Manage D1 databases, run SQL, apply migrations",
@@ -82,7 +67,6 @@ const storageCommands: readonly Command[] = STORAGE_PRODUCTS.map((product) => ({
   summary: `${product.plural[0].toUpperCase()}${product.plural.slice(1)}. \`create\` prints the id to bind from sproutboat.jsonc${product.name === "kv" ? "; key and bulk operations manage contents, and export writes a restorable JSON dump" : ""}${product.name === "d1" ? `; \`execute\` runs SQL against the local dev database (.sproutboat/dev/d1/<BINDING>.sqlite) unless --remote, as in Wrangler, and prints JSON when stdout is not a terminal; \`migrations create <database> <name>\` writes migrations/NNNN_<name>.sql (migrations_dir in sproutboat.jsonc changes the folder), \`migrations list\` shows the ones not applied, and \`migrations apply\` applies them in order, each with its row in the d1_migrations table in one transaction, after a confirmation in a terminal. <database> is the binding name from d1_databases. --remote needs a Sproutboat Cloud endpoint (app:write to change data, app:read for SELECT only); self-hosted Community has no remote D1 route yet and says so` : ""}${product.name === "r2" ? "; `object get | put | delete <bucket>/<key>` read and write the objects of a Cloud app's bucket (<bucket> is the binding name from r2_buckets) with Wrangler's flags (--file, --pipe, --content-type, --content-disposition, --content-encoding, --content-language, --cache-control, --expires; `get` without --file writes ./<key>), 64 MiB per object, remote only (--local is refused). A key is 1 to 1024 bytes with no control character, backslash, or empty, . or .. segment, checked before anything is sent. The key needs the data:read grant to get and data:write to put or delete (the error says which it lacks and how to get it). On self-hosted Community `get` reads through the existing route by bucket name, and `put` and `delete` say they are not supported yet" : ""}${product.name === "queues" ? "; consumers deliver in batches with retries, and stop after 5 attempts" : ""}.`,
 }));
 
-/** The command a typed name runs: an alias maps to its command, anything else is returned as typed. */
 export const resolveCommand = (name: string): string =>
   COMMANDS.find((c) => c.name === name || c.aliases?.includes(name))?.name ?? name;
 
@@ -457,7 +441,6 @@ export const ENV_VARS: readonly EnvVar[] = [
 
 const GROUP_ORDER: readonly Group[] = ["Develop", "Ship", "Storage", "Configure", "Account"];
 
-/** One-line usage string, e.g. for `usage()` and SURFACE.md. */
 export function usageLine(): string {
   const parts = COMMANDS.map((c) => (c.args ? `${c.name} ${c.args}` : c.name));
   return `usage: ${CLI_NAME} <${parts.join(" | ")}>`;
@@ -465,7 +448,6 @@ export function usageLine(): string {
 
 export type GlobalFlag = { flags: string; purpose: string; type: string };
 
-/** Flags every command accepts, listed by `sproutboat --help`. */
 export const GLOBAL_FLAGS: readonly GlobalFlag[] = [
   { flags: "-c, --config", purpose: "Path to the project's config file", type: "string" },
   { flags: "    --cwd", purpose: "Run as if sproutboat was started in this directory", type: "string" },
@@ -488,7 +470,6 @@ export const GLOBAL_FLAGS: readonly GlobalFlag[] = [
   { flags: "-v, --version", purpose: "Show version number", type: "boolean" },
 ];
 
-/** Wrangler-style grouped help: `sproutboat` with no command, or `--help`. */
 export function helpText(): string {
   const invocations = COMMANDS.map((c) => `${c.name} ${c.brief ?? c.args}`.trim());
   const width = Math.max(...invocations.map((s) => s.length));

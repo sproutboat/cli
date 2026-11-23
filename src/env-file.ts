@@ -1,32 +1,7 @@
 /**
- * Local secret input (#275), modelled on Wrangler so the habits carry over.
- *
- * `sproutboat dev` takes local secrets from files, never from the process
- * environment unless asked:
- *
- * - `.dev.vars` beside the config, or the `.env` files, never both. When a
- *   `.dev.vars` exists the `.env*` files are not loaded (a warning names them).
- *   With `--env <name>`, `.dev.vars.<name>` replaces `.dev.vars` when it exists.
- * - The `.env` files layer, most specific first: `.env.<name>.local`,
- *   `.env.local`, `.env.<name>`, `.env`. `CLOUDFLARE_LOAD_DEV_VARS_FROM_DOT_ENV=false`
- *   turns this off. Repeated `--env-file` flags replace the default set; a later
- *   file overrides an earlier one.
- * - The process environment reaches the app only when
- *   `CLOUDFLARE_INCLUDE_PROCESS_ENV=true` and no `.dev.vars` is in use, and then
- *   only for declared secret names. Files win over it.
- * - A declared secret with no value is a warning, and `dev` still starts.
- *
- * `sproutboat run` (the production launch of a standalone binary) is stricter:
- * a missing declared secret fails, like `wrangler deploy`. Its layers, highest
- * first: `--port` and `--data-dir`, the `--env-file` files (later overrides
- * earlier), the inherited environment.
- *
- * File syntax is dotenv's: `NAME=value`, an optional `export `, `#` comments
- * (a whole line, or after an unquoted value), single, double and backtick quotes,
- * `\n` and `\r` expanded inside double quotes only, quoted values may span lines,
- * the last of a repeated name wins. A line that is not an assignment is skipped
- * with a `file:line` warning. Warnings never repeat the text of a line, so a value
- * cannot leak through one.
+ * Local secret input (#275), modelled on Wrangler. `dev` takes secrets from `.dev.vars` or the `.env` files, never both, and
+ * from the process environment only with CLOUDFLARE_INCLUDE_PROCESS_ENV=true; `run` is stricter: a missing declared secret
+ * fails. Warnings never repeat the text of a line, so a value cannot leak through one.
  */
 import { existsSync } from "node:fs";
 import { readFile } from "node:fs/promises";
@@ -53,7 +28,6 @@ export class MissingSecretsError extends Error {
 
 const ASSIGNMENT = /^\s*(?:export\s+)?([\w.-]+)(?:\s*=\s*|:\s+)(.*)$/;
 
-/** Parse dotenv text. Never throws: a bad line becomes a warning. */
 export function parseDotenv(text: string, label: string): ParsedEnv {
   const source = (text.startsWith("﻿") ? text.slice(1) : text).replace(/\r\n?/g, "\n");
   const lines = source.split("\n");
@@ -115,7 +89,6 @@ export function parseDotenv(text: string, label: string): ParsedEnv {
   return { entries: [...byKey.values()], warnings };
 }
 
-/** Read and parse an env file. Throws EnvFileError when it cannot be read. */
 export async function readEnvFile(path: string): Promise<ParsedEnv> {
   let text: string;
   try {
@@ -128,7 +101,6 @@ export async function readEnvFile(path: string): Promise<ParsedEnv> {
   return parseDotenv(text, path);
 }
 
-/** Later entries override earlier ones, by name. */
 export function mergeEntries(layers: EnvEntry[][]): EnvEntry[] {
   const merged = new Map<string, EnvEntry>();
   for (const layer of layers) for (const entry of layer) merged.set(entry.key, entry);
@@ -138,7 +110,6 @@ export function mergeEntries(layers: EnvEntry[][]): EnvEntry[] {
 export type EnvInput = {
   inherited: Record<string, string | undefined>;
   file?: EnvEntry[];
-  /** Explicit launch options as environment variables: `--port` is PORT, `--data-dir` is SB_DATA_DIR. */
   options?: Record<string, string>;
 };
 export type ResolvedEnvironment = { env: Record<string, string>; sources: Map<string, EnvSource> };
@@ -163,26 +134,19 @@ export function resolveEnvironment(input: EnvInput): ResolvedEnvironment {
   return { env, sources };
 }
 
-/** Declared secrets that are unset or empty in `env`, in declaration order. */
 export function missingSecrets(declared: readonly string[], env: Record<string, string>): string[] {
   return declared.filter((name) => (env[name] ?? "") === "");
 }
 
 export type DevVars = {
-  /** What the app sees: every name from the files, plus declared names the process environment supplies when allowed. */
   values: Record<string, string>;
-  /** Files that were read, in order of increasing precedence. */
   used: string[];
-  /** Everything worth telling the developer: ignored files, skipped lines, missing declared secrets. No values. */
   warnings: string[];
 };
 
-/** Local secrets for `sproutboat dev`, by the rules in the module comment. */
 export async function resolveDevVars(input: {
   projectDir: string;
-  /** `--env <name>`: selects `.dev.vars.<name>` and the `.env.<name>` files. */
   envName?: string;
-  /** `--env-file` paths, absolute, in the order given. */
   envFiles?: string[];
   declared: readonly string[];
   inherited: Record<string, string | undefined>;

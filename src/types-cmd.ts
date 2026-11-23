@@ -1,14 +1,7 @@
 /**
- * The `sproutboat types` command: its arguments, the file it writes, and `--check`.
- *
- * Wrangler's contract (`wrangler types [path]`): the positional is the declaration file to write, default
- * `worker-configuration.d.ts`; `--env-interface`, `--strict-vars`, `--include-runtime`, `--include-env` and `--check`
- * behave as there. Two differences are on purpose and said in the help: `--include-runtime` references the runtime
- * types shipped with the CLI instead of copying them in, and there is no `--include-main-module` (nothing here reads
- * `ctx.exports`).
- *
- * Earlier releases took a project directory as the one positional. A positional that is an existing directory is
- * still read that way.
+ * The `sproutboat types` command, with Wrangler's contract (`wrangler types [path]`). Two differences are on purpose:
+ * `--include-runtime` references the runtime types shipped with the CLI instead of copying them in, and there is no
+ * `--include-main-module`. A positional that is an existing directory is still read as a project directory (earlier releases).
  */
 import { existsSync, statSync } from "node:fs";
 import { readFile, rm, writeFile } from "node:fs/promises";
@@ -29,7 +22,6 @@ export const TYPES_USAGE =
   "types [path] [--env-interface <name>] [--no-strict-vars] [--no-include-runtime] [--no-include-env] [--check]";
 
 export type TypesArgs = {
-  /** The declaration file, as typed; or the project directory when it names an existing directory. */
   positional?: string;
   options: Omit<TypesOptions, "command" | "mainModule">;
   check: boolean;
@@ -42,7 +34,6 @@ const BOOLEAN_FLAGS = new Map<string, BooleanOption>([
   ["--include-env", "includeEnv"],
 ]);
 
-/** Parse what is left after the global flags and `checkOptions`, where `--flag=value` is already `--flag value`. */
 export function parseTypesArgs(args: readonly string[]): TypesArgs | { error: string } {
   const out: TypesArgs = { options: {}, check: false };
   for (let at = 0; at < args.length; at += 1) {
@@ -74,7 +65,6 @@ export function parseTypesArgs(args: readonly string[]): TypesArgs | { error: st
   return out;
 }
 
-/** The command line as it is recorded in the generated file's header: the flags that differ from the defaults. */
 function commandLine(parsed: TypesArgs, path: string | undefined): string {
   const { envInterface, strictVars, includeRuntime, includeEnv } = parsed.options;
   return [
@@ -88,20 +78,11 @@ function commandLine(parsed: TypesArgs, path: string | undefined): string {
 }
 
 export type TypesPlan = {
-  /** Absolute path of the declaration file. */
   path: string;
-  /** What `generateTypes` writes for it. */
   text: string;
-  /** The positional was a project directory, which this release still reads (the file is then the default one). */
   legacyDirectory: boolean;
 };
 
-/**
- * The project directory and output file for a positional, and the file's text.
- *
- * `projectDirectory` is where `sproutboat.jsonc` is (already resolved from `-c` / `--cwd` and a directory
- * positional); the output path is relative to the working directory, as in Wrangler.
- */
 export async function planTypes(
   parsed: TypesArgs,
   config: SproutboatConfig,
@@ -136,7 +117,6 @@ export async function planTypes(
   return { path, text, legacyDirectory: asDirectory };
 }
 
-/** `--check`: whether the file at `path` is the one `plan` would write. Missing or hand-written is not current. */
 export async function checkTypes(plan: TypesPlan): Promise<"current" | "stale" | "missing"> {
   if (!existsSync(plan.path)) return "missing";
   return isCurrent(await readFile(plan.path, "utf8"), plan.text) ? "current" : "stale";
@@ -150,7 +130,6 @@ function isDirectory(path: string): boolean {
   }
 }
 
-/** Remove the file earlier releases wrote, when it is still exactly what they generated. */
 export async function removeLegacyTypes(projectDir: string): Promise<boolean> {
   const legacy = resolve(projectDir, LEGACY_TYPES_FILE);
   try {
@@ -162,13 +141,9 @@ export async function removeLegacyTypes(projectDir: string): Promise<boolean> {
   }
 }
 
-/**
- * Rewrite the generated types when the config has moved on, and only when the default file is the one a plain
- * `sproutboat types` wrote. Called from `dev` and `deploy` so a binding added to sproutboat.jsonc cannot sit
- * unreflected in the editor. It writes only when the content differs, which keeps it out of the way of git and of
- * file watchers, and leaves a file made with other flags (or by hand) alone: Wrangler never touches it either.
- * Returns what it did, for the caller to print.
- */
+/** Rewrite the generated types when the config has moved on, and only when the default file is the one a plain
+ * `sproutboat types` wrote. Writes only when the content differs, so it stays out of the way of git and file watchers;
+ * a file made with other flags or by hand is left alone, as Wrangler leaves it. */
 export async function refreshTypes(
   projectDir: string,
   config: SproutboatConfig,

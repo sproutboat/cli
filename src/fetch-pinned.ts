@@ -6,18 +6,12 @@ import { dirname } from "node:path";
 type Fetcher = (input: string | URL | Request, init?: RequestInit) => Promise<Response>;
 
 export type FetchPinnedOptions = {
-  /** A vendored copy read from disk before any network source. Used only if its hash matches. */
   localPath?: string;
-  /** Ordered download sources, tried after the vendored copy. Every one must serve the same bytes. */
   urls: readonly string[];
-  /** Lowercase hex sha256 of the exact bytes. A source that serves anything else is rejected. */
   sha256: string;
-  /** A verified copy is kept here (written atomically) and reused while its hash matches. */
   cachePath?: string;
   fetcher?: Fetcher;
-  /** Attempts per source for a 5xx or a network error. 4xx and a hash mismatch are never retried. */
   attempts?: number;
-  /** First backoff; doubles each retry. */
   backoffMs?: number;
   timeoutMs?: number;
   sleep?: (ms: number) => Promise<void>;
@@ -25,15 +19,12 @@ export type FetchPinnedOptions = {
 
 const sha256Hex = (bytes: Uint8Array): string => createHash("sha256").update(bytes).digest("hex");
 
-/** A failure that will not change on retry: a 4xx, or bytes that fail the pin. */
 class Permanent extends Error {}
 
 /**
- * Return a build-time dependency's bytes, only if they hash to the pinned sha256: first the vendored
- * file (`localPath`), then the ordered download list. The pin is what makes every source safe: one
- * that has different bytes (a tampered vendored file included) is skipped, so the list can only
- * improve availability, never change what gets built. A 5xx or a network error is retried with exponential backoff (bounded); a 4xx or a
- * hash mismatch moves straight on to the next source.
+ * Return a build-time dependency's bytes only if they hash to the pinned sha256: the vendored file, then the download list.
+ * The pin makes every source safe (a tampered vendored file included), so the list can only improve availability. A 5xx or
+ * network error is retried with backoff; a 4xx or a hash mismatch moves on to the next source.
  */
 export async function fetchPinned(options: FetchPinnedOptions): Promise<Buffer> {
   const sha256 = options.sha256.toLowerCase();
