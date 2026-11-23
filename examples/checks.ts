@@ -1,20 +1,13 @@
 /**
- * What each example (and each dogfood app) is expected to do, as HTTP requests. One definition, two runtimes:
- *
- * - `smoke.ts` builds every example as a standalone binary and drives it;
- * - `workerd.ts` runs the same example, unchanged, under workerd (`wrangler dev`) and sends the same requests.
- *
- * An example that only works on Sproutboat fails the second run, which is the point: an example is a standard
- * Cloudflare Worker (see "Rules for examples" in README.md). The few places where Sproutboat deliberately does
- * more than Workers are named in `WORKERD_PARTIAL_SKIPS`; an example workerd cannot run at all is in
- * `WORKERD_SKIPS`. Each has its reason, and `src/examples-rules.test.ts` fails when an entry names no example.
+ * What each example (and dogfood app) is expected to do, as HTTP requests: `smoke.ts` drives a standalone binary and
+ * `workerd.ts` the same example, unchanged, under workerd. One that only works on Sproutboat fails the second run, which is
+ * the point. Deliberate differences are in `WORKERD_PARTIAL_SKIPS` and `WORKERD_SKIPS`, each with its reason.
  */
 import type { JsonValue } from "../src/json";
 import { projectDir } from "../test/fixtures/lib/projects";
 
 export type Runtime = "standalone" | "workerd";
 export type Ok = (name: string, cond: boolean, detail?: JsonValue) => void;
-/** The runner's request functions (they carry its deadlines) and which runtime is under test. */
 export type Context = {
   fetch: (url: string, init?: RequestInit) => Promise<Response>;
   text: (url: string, init?: RequestInit) => Promise<string>;
@@ -22,11 +15,8 @@ export type Context = {
 };
 export type Check = (base: string, ok: Ok, context: Context) => Promise<void>;
 
-/**
- * A starter is checked by its own tests, run against the server this runner started: Bun's test runner runs the same
- * `node:test` files that `npm test` runs with Node, here with BASE_URL pointing at the standalone binary or at
- * workerd. So what a starter's tests assert is proven on all three runtimes, not just on `sproutboat dev`.
- */
+/** A starter is checked by its own tests run against the server this runner started: Bun runs the same `node:test` files
+ * `npm test` runs, with BASE_URL pointing at the binary or workerd, so they are proven on all three runtimes. */
 const ownTests =
   (name: string): Check =>
   async (base, ok) => {
@@ -46,7 +36,6 @@ const ownTests =
     ok("its own tests pass against this server", code === 0, code === 0 ? undefined : (out + err).trim().slice(-3000));
   };
 
-/** Every example, fixture and app that has requests to send, by its name (see test/fixtures/lib/projects.ts). */
 export const CHECKS = {
   hello: async (base, ok, { text }) => {
     ok("greets the world", (await text(base + "/")) === "Hello, world!\n");
@@ -363,7 +352,6 @@ export const CHECKS = {
   },
 } satisfies Record<string, Check>;
 
-/** Examples with no standalone binary: the standalone runner (smoke.ts) leaves them out. */
 export const STANDALONE_SKIPS = new Map([
   [
     "dogfood/kitchen-sink",
@@ -378,16 +366,10 @@ export const SECRETS = new Map([
   ["dogfood/kitchen-sink", { ADMIN_TOKEN: "s3cr3t-admin" }],
 ]);
 
-/**
- * Examples workerd does not run, with why. Empty means every public example runs there; an entry is a promise to
- * say why, and the README's rules name the same list.
- */
+/** Examples workerd does not run, with why. Empty means every public example runs there. */
 export const WORKERD_SKIPS = new Map<string, string>();
 
-/**
- * Examples whose requests are only partly sent to workerd, where Sproutboat does something on purpose that Workers
- * does not. The first comment of the example and its README say so too.
- */
+/** Examples whose requests are only partly sent to workerd, where Sproutboat does something on purpose that Workers does not. */
 export const WORKERD_PARTIAL_SKIPS = new Map([
   [
     "analytics",
@@ -403,10 +385,7 @@ export const WORKERD_PARTIAL_SKIPS = new Map([
   ],
 ]);
 
-/**
- * Examples checked against Cloudflare's own runtime types, which an API only Sproutboat has fails. Same rule as
- * above: an entry says why the example cannot pass.
- */
+/** Examples checked against Cloudflare's own runtime types; an entry says why the example cannot pass. */
 export const CLOUDFLARE_TYPES_SKIPS = new Map([
   [
     "dogfood/kitchen-sink",

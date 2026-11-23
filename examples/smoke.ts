@@ -1,23 +1,8 @@
 #!/usr/bin/env bun
 /**
- * Every small example (and each fixture that is plain Workers code), built and driven.
- *
- *   bun examples/smoke.ts          # all of them
- *   bun examples/smoke.ts kv d1    # just these
- *   SMOKE_CONCURRENCY=1 bun examples/smoke.ts   # one at a time (default 4)
- *
- * Examples build and run in a pool. Each one already has its own project dir
- * (and so its own `.sproutboat/` artifact and Porffor unit dirs), and gets its
- * own temp dir, data dir and port here. The shared toolchain caches are warmed
- * once before the pool starts, so concurrent builds only ever read them.
- *
- * The website's support table links a binding to the example that demonstrates
- * it, so an example that no longer builds turns that table into a claim nobody
- * checked. This is what checks it.
- *
- * Each example is built as a standalone binary rather than run under `dev`,
- * because that needs no broker, no control plane and no ports beyond the one
- * it listens on — and it exercises the binding ops end to end all the same.
+ * Every small example (and each plain-Workers fixture), built as a standalone binary and driven, in a pool
+ * (`SMOKE_CONCURRENCY`, default 4). The website's support table links each binding to its example, so one that no longer
+ * builds would make the table claim something nobody checked. No broker or control plane needed, and the ops run end to end.
  */
 import { cpSync, readFileSync } from "node:fs";
 import { join } from "node:path";
@@ -34,9 +19,8 @@ import { ensureUWebSocketsHost, UwsUnavailableError } from "../src/toolchain";
 import { ensureSqliteObject } from "../src/sqlite";
 import { ensureBearssl } from "../src/bearssl";
 
-// #276: each example's requests go through its own Harness (found by origin),
-// so every one has a deadline (SB_HARNESS_REQUEST_TIMEOUT_MS, default 30 s),
-// names its step before it starts, and ends early if the child exits.
+// #276: each example's requests go through its own Harness, so every one has a deadline (SB_HARNESS_REQUEST_TIMEOUT_MS,
+// default 30 s), names its step and ends early if the child exits.
 const harnessByOrigin = new Map<string, Harness>();
 const fetch = (url: string, init?: RequestInit) => {
   const harness = harnessByOrigin.get(new URL(url).origin);
@@ -89,21 +73,17 @@ const EXAMPLES = {
     Object.entries(FIXTURES).map(([name, check]) => [name, (base: string, ok: Ok) => check(base, ok)]),
   ),
   // The d1 example rebuilt at 2026-10-27, the earliest date where every form it uses is the standard one (D1 returns Promises
-  // from 2026-10-24, request bodies and request.json() from 2026-10-27): it catches an example that only works at the
-  // date its own config names. Before 2026-10-27 request.json() is synchronous, so `.catch()` on it is a TypeError.
+  // from 2026-10-24, request bodies and request.json() from 2026-10-27): it catches an example that only works at its own date.
   "d1@2026-10-27": CHECKS.d1,
 } satisfies Record<string, Check>;
 
-// Everything else spawns with just PORT/SB_DATA_DIR; vars-secrets also needs
-// its one declared secret, which a standalone binary reads from the process
-// environment rather than anything sproutboat.jsonc can supply.
+// Everything else spawns with just PORT/SB_DATA_DIR; vars-secrets also needs its declared secret, which a standalone binary
+// reads from the process environment.
 type Name = keyof typeof EXAMPLES;
 const isName = (v: string): v is Name => Object.hasOwn(EXAMPLES, v);
 
-// Ports handed out in this run. The kernel picks a free one, but with several
-// examples starting at once two probes can be handed the same port before
-// either child binds it, and then one example's checks talk to another's
-// server. Remembering every port given out rules that out.
+// Ports handed out in this run: with several examples starting at once two probes can get the same port before either child
+// binds it, and one example's checks would talk to another's server.
 const takenPorts = new Set<number>();
 function freePort(): number {
   for (;;) {
@@ -133,8 +113,6 @@ if (!Number.isInteger(concurrency) || concurrency < 1) {
 
 const seconds = (ms: number) => `${(ms / 1000).toFixed(1)}s`;
 
-// Live children and temp dirs, so an interrupted run does not leave servers
-// listening or temp dirs behind.
 type LiveEntry = { harness: Harness };
 const live = new Set<LiveEntry>();
 for (const [signal, code] of [
@@ -142,8 +120,6 @@ for (const [signal, code] of [
   ["SIGTERM", 143],
 ] as const) {
   process.on(signal, () => {
-    // Every live example's child and temp dir, then anything they or a build
-    // started (found by parent pid, never by name).
     for (const entry of live) entry.harness.cleanupSync({ descendants: false });
     for (const pid of descendantPids()) {
       try {
@@ -155,12 +131,9 @@ for (const [signal, code] of [
 }
 
 /**
- * Fill the caches every build shares before any build runs. Each has its own
- * lock, but a waiter gives up after 30 seconds, and a cold BearSSL or
- * uSockets build can take longer than that while three other builds wait on
- * it. Doing it once up front also settles Porffor's build-dir pruning, which
- * otherwise runs in the background of the first compile and could remove a
- * stale unit dir another example is compiling into at that moment.
+ * Fill the caches every build shares before any build runs. A waiter gives up after 30 s, and a cold BearSSL or uSockets
+ * build can take longer. This also settles Porffor's build-dir pruning, which would otherwise run in the background of the
+ * first compile and could remove a unit dir another example is compiling into.
  */
 async function warmSharedCaches(): Promise<void> {
   await prunePorfforBuilds();
@@ -168,7 +141,6 @@ async function warmSharedCaches(): Promise<void> {
   try {
     await ensureUWebSocketsHost();
   } catch (error) {
-    // compileSprout falls back to Porffor's own git + make build when asked to.
     if (!(error instanceof UwsUnavailableError && process.env.SPROUTBOAT_BUILD_UWS_FROM_SOURCE === "1")) throw error;
   }
   await Promise.all([ensureSqliteObject({ target: "host" }), ensureBearssl({ target: "host" })]);
@@ -208,8 +180,6 @@ async function runExample(name: Name): Promise<Result> {
     const config = compatDate ? { ...parsed.value, compatibility_date: compatDate } : parsed.value;
 
     const sourcePath = join(dir, config.main);
-    // Compilation has its own deadline (SB_HARNESS_BUILD_TIMEOUT_MS), so a slow
-    // build cannot look like a hung handler.
     const built = await harness.build(`building ${name}`, async () => {
       const bundle = await bundleHandler(sourcePath, dir);
       return buildStandalone({
@@ -233,7 +203,6 @@ async function runExample(name: Name): Promise<Result> {
     origin = new URL(base).origin;
     harnessByOrigin.set(origin, harness);
 
-    // Readiness has its own deadline (SB_HARNESS_READY_TIMEOUT_MS).
     await harness.waitReady(base + "/");
     harness.step(`checks for ${name}`);
     await EXAMPLES[name](
@@ -249,8 +218,6 @@ async function runExample(name: Name): Promise<Result> {
     );
   } catch (error) {
     if (error instanceof HarnessFailure) {
-      // A stall, a child that exited, or a deadline: step, backend, versions
-      // and the child's recent stderr, secrets removed.
       failureReport = harness.report(error);
       lines.push(`  FAIL  ${error.message}`);
     } else {
@@ -294,7 +261,6 @@ async function worker(): Promise<void> {
     console.log(`building ${name}...`);
     const result = await runExample(name);
     results.push(result);
-    // One write per example, so concurrent results never interleave.
     console.log(`${result.report}\n  [${results.length}/${names.length} done]`);
   }
 }

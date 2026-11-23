@@ -1,9 +1,6 @@
 #!/usr/bin/env node
-// npm resolves exactly one @sproutboat/cli-<os>-<arch> optionalDependency for
-// this host at install time (#134); this launcher just execs that native
-// single-file binary. No Bun, no fallback: a platform with no published
-// binary means npm skipped that optional dependency, and require.resolve
-// below fails with a clear "package not found" rather than a silent one.
+// npm resolves exactly one @sproutboat/cli-<os>-<arch> optionalDependency for this host (#134); this launcher execs that
+// native binary. No fallback: a platform with no published binary means npm skipped it, and require.resolve fails below.
 const { spawn } = require("node:child_process");
 
 const platform = process.platform === "darwin" ? "darwin" : process.platform === "linux" ? "linux" : null;

@@ -1,16 +1,7 @@
 /**
- * Which directories hold a Worker that the runners (smoke.ts, workerd.ts, typecheck.ts) and
- * `src/examples-rules.test.ts` hold to the Workers style, and where.
- *
- * `examples/` holds only what a person reads. `templates/` holds the starters `sproutboat init --template` writes.
- * `dogfood/` holds the apps Sproutboat itself deploys and checks every
- * generation swap with. Everything that exists for a test or a measurement is a fixture under `test/fixtures/`; of
- * those, the ones that are plain Workers (the Cloudflare ports, `request`, `upload`) are checked beside the examples,
- * and the rest (conformance, stress, runtime-comparison, workers-verbatim, workers-contract) are driven by their own
- * harnesses.
- *
- * A project's name is its path under its group's directory, prefixed with the group's name unless the group is
- * `examples`: `kv`, `service-bindings/caller`, `fixtures/cf-json`, `dogfood/kitchen-sink`, `templates/jobs`.
+ * Which directories hold a Worker that the runners and `src/examples-rules.test.ts` hold to the Workers style: `examples/`,
+ * `templates/`, `dogfood/` and the plain-Workers fixtures under `test/fixtures/`. A project's name is its path under its
+ * group's directory, prefixed with the group's name unless the group is `examples`.
  */
 import { existsSync, readdirSync } from "node:fs";
 import { join } from "node:path";
@@ -21,7 +12,6 @@ export const FIXTURES_DIR = join(REPO, "test/fixtures");
 export const DOGFOOD_DIR = join(REPO, "dogfood");
 export const TEMPLATES_DIR = join(REPO, "templates");
 
-/** The fixtures that are standard Workers, and so run on workerd and as standalone binaries with the examples. */
 export const STANDARD_FIXTURES: readonly string[] = [
   "cf-cookies",
   "cf-headers",
@@ -42,7 +32,6 @@ const GROUP_DIRS = {
   fixtures: FIXTURES_DIR,
 } satisfies Record<Group, string>;
 
-/** `sproutboat.jsonc` directories under `root`, at most two levels deep (`service-bindings/caller`). */
 function configDirs(root: string, only?: readonly string[]): string[] {
   const found: string[] = [];
   const visit = (relative: string, depth: number) => {
@@ -62,7 +51,6 @@ function configDirs(root: string, only?: readonly string[]): string[] {
   return found;
 }
 
-/** Every project the runners know, sorted by name. */
 export function projects(): Project[] {
   const all: Project[] = [];
   for (const relative of configDirs(EXAMPLES_DIR))
@@ -78,12 +66,10 @@ export function projects(): Project[] {
 
 export const projectNames = (): string[] => projects().map((project) => project.name);
 
-/** The directory of a project, by name. */
 export function projectDir(name: string): string {
   const found = projects().find((project) => project.name === name);
   if (!found) throw new Error(`no such project: ${name}`);
   return found.dir;
 }
 
-/** The directory that holds a group's `node_modules` (see typecheck.ts, which links the CLI there). */
 export const groupRoots = (): string[] => Object.values(GROUP_DIRS);

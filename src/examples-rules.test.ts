@@ -1,8 +1,7 @@
 /**
- * The rules in examples/README.md that can be checked without running anything: every example (and every fixture
- * that is plain Workers code) is written in the standard Workers style, is registered with the runners that hold it
- * to it, and has its generated types and documentation; examples/ holds nothing but examples. The runtime half
- * (workerd, Cloudflare's types) is `bun run examples:workerd`.
+ * The rules in examples/README.md that can be checked without running anything: every example is in the standard Workers
+ * style, registered with the runners that hold it to it, and has its generated types and docs. The runtime half is
+ * `bun run examples:workerd`.
  */
 import { describe, expect, test } from "bun:test";
 import { existsSync, readdirSync, readFileSync } from "node:fs";

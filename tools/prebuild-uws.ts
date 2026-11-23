@@ -1,17 +1,8 @@
 #!/usr/bin/env bun
 /**
- * Produce `uwebsockets-<short>-musl.tar.xz`: the checked-out, patched, and
- * `zig cc -target x86_64-linux-musl`-built uWebSockets tree that Porffor links
- * for the native-fetch server (headers + `uSockets/uSockets.a`).
- *
- * It ships in the package under `vendor/`; `src/toolchain.ts` `ensureUWebSockets()`
- * extracts it so a user's first build needs no `git` / `make`. Run this whenever
- * the `porffor` pin (and thus its uWebSockets commit) changes:
- *
- *   bun tools/prebuild-uws.ts
- *
- * then paste the printed sha256 into `UWS_TARBALL_SHA256` and commit `vendor/`.
- * CI does it for you — see .github/workflows/uws-prebuild.yml.
+ * Produce `uwebsockets-<short>-musl.tar.xz`: the patched, `zig cc -target x86_64-linux-musl`-built uWebSockets tree Porffor
+ * links for the native-fetch server. It ships under `vendor/` so a user's first build needs no `git` / `make`. Run it when
+ * the `porffor` pin changes, then paste the printed sha256 into `UWS_TARBALL_SHA256` (CI does it: uws-prebuild.yml).
  */
 import { createHash } from "node:crypto";
 import { existsSync, readFileSync } from "node:fs";

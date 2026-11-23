@@ -1,22 +1,8 @@
 #!/usr/bin/env bun
 /**
- * Every public example, unchanged, on workerd.
- *
- *   bun examples/workerd.ts            # all of them
- *   bun examples/workerd.ts kv d1      # just these
- *   WORKERD_CONCURRENCY=1 bun examples/workerd.ts
- *
- * An example is a standard Cloudflare Worker, and this is what holds it to that. For each one it
- *
- *   1. translates sproutboat.jsonc into a wrangler.jsonc (test/fixtures/lib/wrangler-config.ts);
- *   2. typechecks the entry against the runtime types `wrangler types` generates, with no Sproutboat declaration in
- *      the program, so an API only Sproutboat has is a type error;
- *   3. runs it under workerd with `wrangler dev` and sends it the requests in checks.ts, the same ones smoke.ts
- *      sends the standalone binary.
- *
- * What is skipped is printed at the end with its reason (WORKERD_SKIPS, WORKERD_PARTIAL_SKIPS and
- * CLOUDFLARE_TYPES_SKIPS in checks.ts). Nothing is written outside a temp dir per example, and only this process's
- * own children are stopped, found by parent pid.
+ * Every public example, unchanged, on workerd. An example is a standard Cloudflare Worker, and this holds it to that: it
+ * translates sproutboat.jsonc into a wrangler.jsonc, typechecks the entry against `wrangler types` with no Sproutboat
+ * declaration in the program, and runs it under `wrangler dev` with the requests in checks.ts. Skips print with their reason.
  */
 import { join } from "node:path";
 import {
@@ -41,13 +27,11 @@ import {
   writeWranglerProject,
 } from "../test/fixtures/lib/workerd";
 
-/** Examples that need another example running beside them, by name. */
 const COMPANIONS = new Map([
   ["service-bindings/caller", ["service-bindings/callee"]],
   ["dogfood/kitchen-sink", ["dogfood/quote-service"]],
 ]);
 
-/** What an example needs built before it can run: kitchen-sink's dashboard is public/ copied to site/. */
 const PREPARE = new Map([["dogfood/kitchen-sink", buildWebUi]]);
 
 const CHECKS_BY_NAME: Record<string, Check> = CHECKS;

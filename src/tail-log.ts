@@ -1,23 +1,7 @@
 /**
- * `sproutboat tail --file <log>`: follow the structured records a standalone
- * binary writes when it runs with `SB_LOG=json` (#268). No control plane and
- * no login are involved; the log is whatever the operator already keeps:
- *
- *     SB_LOG=json ./app 2>> /var/log/app.jsonl
- *     sproutboat tail --file /var/log/app.jsonl
- *     journalctl -u app -f -o cat | sproutboat tail --file -
- *
- * Records are `request`, `error` and `dropped` lines of version 1. Anything
- * else in the file (the app's own console output, a startup banner, a record
- * of a newer version) is skipped. Output stays bounded and safe to pipe:
- * only known fields are kept and cut to fixed lengths, whatever the file
- * holds, so a hostile or oversized line cannot grow memory, inject terminal
- * escapes or add fields to `--format json` output.
- *
- * Reconnect behavior while following a file: it is polled, and a missing file
- * is waited for; a file replaced by rotation (a new inode) or truncated in
- * place is reopened from its start. Following ends on SIGINT or SIGTERM
- * (exit 0). With `-` (stdin) it ends when the input does.
+ * `sproutboat tail --file <log>`: follow the structured records a standalone binary writes with `SB_LOG=json` (#268); no
+ * login. Output stays bounded and safe to pipe: only known fields are kept and cut to fixed lengths, so a hostile or
+ * oversized line cannot grow memory, inject terminal escapes or add fields to `--format json`. Other lines are skipped.
  */
 import { open, stat, type FileHandle } from "node:fs/promises";
 import { isSafeInteger, isString, jsonObject, parseJsonValue, type JsonObject, type JsonValue } from "./json";
@@ -54,7 +38,6 @@ const MAX_MESSAGE = 1000;
 const MAX_STACK = 2000;
 /** The longest line read; a longer one is skipped, never held in memory. */
 export const DEFAULT_MAX_LINE_BYTES = 64 * 1024;
-/** How much of the end of a file is looked at to find the last lines. */
 const SNAPSHOT_WINDOW_BYTES = 256 * 1024;
 const READ_CHUNK_BYTES = 256 * 1024;
 export const MAX_SNAPSHOT_LINES = 100_000;
@@ -63,7 +46,6 @@ const cut = (text: string, max: number): string => (text.length > max ? text.sli
 const count = (value: JsonValue | undefined): number | undefined =>
   isSafeInteger(value) && value >= 0 ? value : undefined;
 
-/** One log line as a record, or undefined when it is not a version 1 record. */
 export function parseLogLine(line: string): LogRecord | undefined {
   const trimmed = line.trim();
   if (!trimmed.startsWith("{")) return undefined;
@@ -118,13 +100,8 @@ const MAX_PENDING_ERRORS = 200;
 
 export type LogFilterInput = { status: string[]; method: string[]; search: string | undefined };
 
-/**
- * `--status`, `--method` and `--search` for a log. Status and method describe a
- * request, so they select request records; an error follows the request it was
- * raised in (shown when that request was), and an error with no request (an
- * alarm, a queue, a rejected promise) is always shown. The meanings match the
- * live tail: `ok` is a success below 400, `error` is a 5xx or a thrown handler.
- */
+/** `--status`, `--method` and `--search` for a log. Status and method select request records; an error follows the request
+ * it was raised in, and one with no request (an alarm, a queue, a rejected promise) is always shown. */
 export class LogFilter {
   private readonly status: StatusMatcher[];
   private readonly method: string[];
@@ -144,11 +121,8 @@ export class LogFilter {
     this.search = input.search?.toLowerCase();
   }
 
-  /**
-   * The records to print for `record`, in order. An error raised while answering a request is written
-   * before that request's record, so under a status or method filter it waits for the request (up to
-   * 200 at a time, oldest dropped) and is printed just before it, or discarded with it.
-   */
+  /** An error is written before its request's record, so under a status or method filter it waits for the request (up to
+   * 200 at a time, oldest dropped) and is printed just before it, or discarded with it. */
   accept(record: LogRecord): LogRecord[] {
     if (record.type === "error" && record.id !== null && !this.shown.has(record.id)) {
       const filtered = this.status.length > 0 || this.method.length > 0;
@@ -234,7 +208,6 @@ function statusColor(status: number, text: string): string {
   return leaf(text);
 }
 
-/** One pretty line for a record. */
 export function formatLogRecord(record: LogRecord): string {
   const time = dim(clock(record.timestamp));
   if (record.type === "dropped") {
@@ -259,18 +232,13 @@ export type LogSinkOptions = {
 
 export type LogTailOptions = LogSinkOptions & {
   path: string;
-  /** How many of the file's last matching lines to print first. */
   lines: number;
-  /** Keep following after the snapshot. */
   follow: boolean;
-  /** Poll interval of a followed file. */
   pollMs?: number;
   maxLineBytes?: number;
-  /** Called once the file is open and its snapshot is printed: anything appended after this is followed. */
   onReady?: () => void;
 };
 
-/** Turns lines into output. One per run, so a skipped-line count covers the whole run. */
 class LogPrinter {
   private skipped = 0;
   private skippedLimit = DEFAULT_MAX_LINE_BYTES;
@@ -298,7 +266,6 @@ class LogPrinter {
   }
 }
 
-/** Splits bytes into lines of at most `maxBytes`; a longer line is skipped to its end. */
 class LineSplitter {
   private buffer: Buffer = Buffer.alloc(0);
   private skipping = false;
@@ -336,7 +303,6 @@ class LineSplitter {
   }
 }
 
-/** Records from a stream (stdin) until it ends or the signal aborts. */
 export async function readLogStream(body: ReadableStream<Uint8Array>, options: LogSinkOptions): Promise<void> {
   const printer = new LogPrinter(options);
   const splitter = new LineSplitter(
@@ -376,7 +342,6 @@ const sleep = (ms: number, signal: AbortSignal) =>
 
 const isMissing = (error: Error): boolean => "code" in error && error.code === "ENOENT";
 
-/** The last `lines` matching records among the final complete lines of the file's last 256 KiB. */
 async function snapshot(handle: FileHandle, size: number, printer: LogPrinter, options: LogTailOptions): Promise<void> {
   if (options.lines === 0 || size === 0) return;
   const start = Math.max(0, size - SNAPSHOT_WINDOW_BYTES);
@@ -394,10 +359,6 @@ async function snapshot(handle: FileHandle, size: number, printer: LogPrinter, o
   for (const record of picked.slice(-options.lines)) printer.emit(record);
 }
 
-/**
- * Print the file's last lines, then (unless `follow` is false) new records as
- * they are appended, until the signal aborts.
- */
 export async function followLog(options: LogTailOptions): Promise<void> {
   const printer = new LogPrinter(options);
   const pollMs = options.pollMs ?? 250;
@@ -433,7 +394,6 @@ export async function followLog(options: LogTailOptions): Promise<void> {
       first = false;
       options.onReady?.();
       if (!options.follow) return;
-      // On a reopened file (rotation, truncation, a late start) everything in it is new.
       for (;;) {
         const chunk = Buffer.alloc(READ_CHUNK_BYTES);
         const { bytesRead } = await handle.read(chunk, 0, chunk.length, offset);
@@ -449,7 +409,6 @@ export async function followLog(options: LogTailOptions): Promise<void> {
         try {
           current = await stat(options.path);
         } catch {
-          // Removed while open: wait for the next one.
           options.stderr(`${dim(`${options.path} went away, waiting for it`)}\n`);
           break;
         }

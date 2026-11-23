@@ -10,6 +10,14 @@ alone, or commas for an aside.
 An em dash is almost always one of those three doing a worse job, and a page of
 them reads as machine-written.
 
+## Comments
+
+**Comments only say what the code cannot.** Make the code clear instead: a good name beats a comment. Keep a comment only for a non-obvious why (an outside constraint, a workaround, a security or privacy invariant, a choice someone would otherwise "fix", an issue reference), at most 3 lines. `sproutboat/max-comment-lines` (`.oxlint/sproutboat`) fails anything longer in `bun run lint`, except `SAFETY:` comments and tool directives.
+
+Files whose bytes feed a build or generation identity, are injected into compiled apps, are copied into user projects or must stay verbatim are exempt in `.oxlintrc.json`: a comment edit there changes an identity or someone's project. They are `src/build.ts`, `compile.ts`, `sqlite.ts`, `bearssl.ts` and `toolchain.ts` (hashed by `integrationIdentity()` into the compile key), `src/node-shims.ts` and `bundle.ts` (shims injected into the app bundle), `templates/**` (copied into projects, embedded in `src/templates-embedded.ts`), `examples/*/**`, `dogfood/**`, `bench/**`, `test/fixtures/*/src/**`, `test/fixtures/workers-verbatim/**` and `test/fixtures/runtime-comparison/**` (apps and benchmark inputs that are built and compared, or hashed into reports). `types/**`, `vendor/**` and `src/templates-embedded.ts` are not linted at all.
+
+A comment-only change is checked with `bun run check:comments` (necessary, not sufficient: types are erased before the comparison, so `tsc --noEmit` must also pass and any type or declaration change needs a manual look): every MODIFIED source file (.ts/.tsx/.js/.mjs/.cjs) must transpile byte-identical to `origin/main`. It does not compare added files, and fails on deleted or renamed ones; review those by hand.
+
 ## Before claiming something works
 
 `bun test`, then both conformance harnesses:

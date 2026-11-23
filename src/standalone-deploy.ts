@@ -1,16 +1,12 @@
 /**
- * Deploy recipes for a standalone binary: `build --standalone --deploy-files` writes them beside it.
- *
- * Nothing here terminates TLS. The binary is a plain HTTP server, and every recipe puts it behind
- * something that owns the certificate (Fly's edge, a reverse proxy, a load balancer). The recipes are
- * strings so they can be tested without a build; docs/standalone.md explains what they do.
+ * Deploy recipes for a standalone binary (`build --standalone --deploy-files`). Nothing here terminates TLS: every recipe
+ * puts the plain HTTP binary behind something that owns the certificate. The recipes are strings so they test without a build.
  */
 import { chmod, copyFile, mkdir, writeFile } from "node:fs/promises";
 import { basename, dirname, resolve } from "node:path";
 import { LINUX_TARGETS, type LinuxTarget } from "./targets";
 
 export type DeployFilesInput = {
-  /** The project name: the binary, unit and Fly app are all called this. */
   name: string;
   target: LinuxTarget;
 };
@@ -187,7 +183,6 @@ fly deploy -a ${name} --config fly.toml
 
 export type DeployFiles = { dir: string; files: string[] };
 
-/** Write the recipes into `<binary>.deploy/`, with a copy of the binary where the Dockerfile and scp expect it. */
 export async function writeDeployFiles(input: DeployFilesInput & { binary: string }): Promise<DeployFiles> {
   const dir = resolve(dirname(input.binary), `${basename(input.binary)}.deploy`);
   await mkdir(resolve(dir, "data"), { recursive: true });

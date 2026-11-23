@@ -1,12 +1,7 @@
 /**
- * `sproutboat.jsonc` bindings as the Sproutboat Cloud's app record carries them (sproutboat-cloud `src/record.ts`,
- * `bindings`, `crons`, `queue_consumers`). The Cloud validates the same shape again on `PUT /v1/apps/<app>` and
- * `POST /v1/apps/<app>/builds`; checking here means a mistake fails before anything is uploaded, in the CLI's words.
- *
- * Where a resource id comes from: on the Cloud each app's storage is private to it, so the binding is the name
- * (`d1_databases: ["DB"]` is `d1/DB`, the name `d1 execute --remote` and `r2 object` address). A binding that needs a
- * `resource_id` (kv, d1, r2, queue) gets its own name in lowercase, because the record's resource ids are lowercase;
- * a queue gets its queue name. Nothing is provisioned: the host creates the storage on first use.
+ * `sproutboat.jsonc` bindings as the Cloud's app record carries them (sproutboat-cloud `src/record.ts`), checked here so a
+ * mistake fails before anything is uploaded. Each app's storage is private to it, so a resource id is the binding name in
+ * lowercase (`d1_databases: ["DB"]` is `d1/DB`); a queue gets its queue name. The host creates the storage on first use.
  */
 import { existsSync, readFileSync } from "node:fs";
 import { resolve } from "node:path";
@@ -30,11 +25,9 @@ export type CloudBindings = {
   bindings: RecordBinding[];
   crons: string[];
   queue_consumers: RecordQueueConsumer[];
-  /** Things the Cloud ignores, said once before the deploy. */
   warnings: string[];
 };
 
-/** The record's own limits (sproutboat-cloud `src/record.ts`). */
 export const MAX_BINDINGS = 64;
 export const MAX_CRONS = 16;
 export const MAX_QUEUE_CONSUMERS = 16;
@@ -44,7 +37,6 @@ const CRON_CHARS_RE = /^[0-9A-Za-z*,/ -]+$/;
 /** Cloudflare's defaults for a queue consumer, which the runtime applies when sproutboat.jsonc leaves a setting out. */
 const QUEUE_DEFAULTS = { maxBatchSize: 10, maxBatchTimeout: 0, maxRetries: 3 };
 
-/** `resource_id` for a binding or queue name: lowercase, so `DB` is `db` and `EMAILS` is `emails`. */
 function resourceIdFor(what: string, name: string): string {
   const id = name.toLowerCase();
   if (!RESOURCE_ID_RE.test(id))
@@ -78,11 +70,8 @@ type Mappable = Pick<
   | "triggers"
 >;
 
-/**
- * Every binding kind in sproutboat.jsonc as a record entry, plus `crons` and one `queue_consumers` entry per queue
- * (the worker consumes every queue it binds). `serviceBindings` is how many service bindings the deploy adds, so the
- * 64-binding limit counts them. Throws CloudError for anything the Cloud would refuse.
- */
+/** Every binding kind as a record entry, plus `crons` and one `queue_consumers` entry per queue. `serviceBindings` counts
+ * toward the 64-binding limit. Throws CloudError for anything the Cloud would refuse. */
 export function mapCloudBindings(config: Mappable, serviceBindings = 0): CloudBindings {
   const bindings: RecordBinding[] = [];
   const warnings: string[] = [];
@@ -160,7 +149,6 @@ export function mapCloudBindings(config: Mappable, serviceBindings = 0): CloudBi
   return { bindings, crons, queue_consumers, warnings };
 }
 
-/** The names a module exports, as far as its source says. `null` when an `export *` hides some. */
 function exportedNames(source: string): Set<string> | null {
   const code = source
     .replace(/\/\*[\s\S]*?\*\//g, "")
@@ -204,7 +192,6 @@ export function checkDurableObjectExports(config: Mappable & Pick<SproutboatConf
       );
 }
 
-/** The plan as lines, for `deploy` and `--dry-run`: what each binding becomes on the Cloud. */
 export function describeCloudBindings(plan: CloudBindings): string[] {
   const lines: string[] = [];
   for (const b of plan.bindings) {

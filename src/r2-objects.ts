@@ -1,8 +1,7 @@
 /**
- * `sproutboat r2 object get | put | delete <bucket>/<key>`, with Wrangler's flags. On a Cloud endpoint an object lives in the
- * app's own bucket on its host (`/v1/apps/<app>/r2/<BUCKET>/objects/<key>`, docs/host-data.md in the cloud repo), and
- * `<bucket>` is the binding name from `r2_buckets`. Self-hosted Community can read an object (`/api/r2/<id>/objects/<key>`)
- * but has no route to write or delete one: its 404 is reported as not supported yet.
+ * `sproutboat r2 object get | put | delete <bucket>/<key>`, with Wrangler's flags. On a Cloud endpoint `<bucket>` is the
+ * binding name and the object lives in the app's own bucket on its host; self-hosted Community can read an object but
+ * has no route to write or delete one (its 404 is reported as not supported yet).
  */
 import { existsSync, mkdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
 import { dirname, resolve } from "node:path";
@@ -17,7 +16,6 @@ export const PUT_USAGE =
 export const DELETE_USAGE = "r2 object delete <bucket>/<key>";
 /** What one object may be through the Cloud API (a PUT is refused over it before any host is called). */
 export const OBJECT_MAX_BYTES = 64 * 1024 * 1024;
-/** The longest key, in bytes of UTF-8. */
 export const KEY_MAX_BYTES = 1024;
 
 export class R2UsageError extends Error {
@@ -41,14 +39,10 @@ export type ObjectFlags = {
   account?: string;
 };
 
-/** `{bucket}/{key}`: the bucket is everything before the first slash, the key everything after it. */
 export type ObjectPath = { bucket: string; key: string };
 
-/**
- * The rules the Cloud applies to a key (docs/host-data.md, "R2 keys"), so a bad one is refused here with a reason
- * instead of coming back as a 400: 1 to 1024 bytes of UTF-8, no control character (C0, DEL, C1), no backslash, and no
- * empty, `.` or `..` segment. Returns the problem, or undefined when the key is fine.
- */
+/** The rules the Cloud applies to a key (docs/host-data.md, "R2 keys"), so a bad one is refused here with a reason instead
+ * of a 400: 1 to 1024 bytes of UTF-8, no control character, no backslash, no empty, `.` or `..` segment. */
 export function keyProblem(key: string): string | undefined {
   if (key.length === 0) return "the key is empty";
   try {
@@ -84,7 +78,6 @@ export function parseObjectPath(path: string | undefined, usage: string): Object
   return { bucket: path.slice(0, slash), key };
 }
 
-/** Read stdin up to `max` bytes; a longer input stops the read instead of filling memory. */
 export async function readCapped(
   stream: ReadableStream<Uint8Array>,
   max: number,
@@ -176,7 +169,6 @@ export function parseObjectArgs(args: readonly string[], usage: string) {
   return { positional, flags };
 }
 
-/** The headers a PUT carries: the object's HTTP metadata, as the Cloud route reads them. */
 /** The object metadata headers a PUT carries; `x-object-cache-control` is the object's Cache-Control (docs/host-data.md). */
 export type ObjectHeaders = {
   "content-type"?: string;
@@ -209,7 +201,6 @@ export type ObjectIo = {
   stdout: { write(bytes: Uint8Array): void };
 };
 
-/** How the command reaches the objects of one bucket. */
 export type ObjectTarget = {
   community: boolean;
   bucket: string;
@@ -252,7 +243,6 @@ export function storedContentType(headers: Headers): string | undefined {
   return headers.get("x-object-content-type") ?? undefined;
 }
 
-/** Where `get` writes: --file, stdout with --pipe, otherwise ./<key> (Wrangler's default), creating folders. */
 export async function getObject(
   target: ObjectTarget,
   key: string,
@@ -323,11 +313,9 @@ export async function deleteObject(target: ObjectTarget, key: string, io: Object
 }
 
 /**
- * A Cloud app's bucket: `/v1/apps/<app>/r2/<BUCKET>/objects/<key>` with the key's slashes kept. A key never holds a dot
- * segment, a backslash or a control character (checked before this), so `encodeURIComponent` never writes the `%2e`,
- * `%2f` or `%5c` the Cloud refuses. The body is whole bytes, so the request always carries `content-length` (an
- * `x-declared-length` is only for a chunked body, which this never sends). A GET is not decompressed: the bytes written are
- * the bytes stored, whatever the transport says.
+ * A Cloud app's bucket, with the key's slashes kept. A key never holds a dot segment, a backslash or a control character
+ * (checked before this), so `encodeURIComponent` never writes the `%2e`, `%2f` or `%5c` the Cloud refuses. The body is whole
+ * bytes, so the request always carries `content-length`. A GET is not decompressed: the bytes written are the bytes stored.
  */
 export function cloudTarget(apiUrl: string, token: string, app: string, bucket: string): ObjectTarget {
   return {
@@ -348,7 +336,6 @@ export function cloudTarget(apiUrl: string, token: string, app: string, bucket: 
   };
 }
 
-/** A Community bucket by its resource id: the read route exists, the write and delete routes do not (their 404 says so). */
 export function communityTarget(apiUrl: string, token: string, app: string, bucket: string, id: string): ObjectTarget {
   return {
     community: true,

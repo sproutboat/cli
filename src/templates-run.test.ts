@@ -1,10 +1,7 @@
 /**
- * What a person gets from `sproutboat init --template <name>`, run: each starter is scaffolded by the real CLI into a
- * temp directory, typechecks there (the Worker against the generated types, the tests against Node's), and passes its
- * own tests against `sproutboat dev`, which is what `npm test` does in a new project. A package install is replaced
- * by two links and a launcher, so the test needs no network.
- *
- * `bun run examples` and `bun run examples:workerd` run the same tests against a standalone binary and workerd.
+ * What a person gets from `sproutboat init --template <name>`, run: each starter is scaffolded by the real CLI into a temp
+ * directory, typechecks, and passes its own tests against `sproutboat dev`. A package install is replaced by two links
+ * and a launcher, so the test needs no network.
  */
 import { expect, test } from "bun:test";
 import { chmodSync, mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from "node:fs";

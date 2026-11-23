@@ -1,9 +1,6 @@
 /**
- * A project's `migrations/` applied to the database of a run, the way `sproutboat d1 migrations apply --local` would,
- * for the starters whose schema is a migration and not something the Worker creates (templates/api-d1).
- *
- * A standalone binary keeps `<SB_DATA_DIR>/d1/<BINDING>.sqlite`, which is where `localDatabasePath` points when given
- * the data directory, so the same code that `sproutboat d1` uses prepares it before the binary starts.
+ * A project's `migrations/` applied to a run's database as `sproutboat d1 migrations apply --local` would, for starters
+ * whose schema is a migration (templates/api-d1). A standalone binary keeps `<SB_DATA_DIR>/d1/<BINDING>.sqlite`.
  */
 import { existsSync } from "node:fs";
 import { join } from "node:path";

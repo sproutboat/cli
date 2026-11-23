@@ -5,13 +5,9 @@ import { isString, jsonObject } from "./json";
 
 export type EndpointKind = "cloud" | "community";
 
-/** One Cloud team the user is logged in to: an account API key the device login minted. */
 export type StoredTeam = { token: string; id: string; name: string; role: string; keyId: string; keyName: string };
 
-/**
- * One named profile: an endpoint, the credential stored for it and the default team. `token` is the default
- * team's key (or the only credential of a Community endpoint).
- */
+/** One named profile: an endpoint, its credential and the default team. `token` is the default team's key (or the only credential of a Community endpoint). */
 export type Profile = {
   apiUrl: string;
   token: string;
@@ -20,22 +16,15 @@ export type Profile = {
   teams: Record<string, StoredTeam>;
 };
 
-/** A profile without its endpoint: what `credentials.json` keeps per endpoint, and what a profile can carry itself. */
 type Credential = Omit<Profile, "apiUrl">;
 
 /**
- * Storage. Every CLI up to 0.53 reads `credentials.json` as version 1: `activeApiUrl` plus one credential per
- * endpoint URL. That file keeps exactly that shape forever, so a project that still has an older CLI pinned keeps
- * authenticating after the newest CLI logs in, logs out or switches profile. Profiles are a second file next to it,
- * `profiles.json`: a name, the endpoint, and (only when the profile is not the one `credentials.json` holds for that
- * endpoint) its own credential. Tokens are never copied between the files.
- *
- * In memory every profile has its full credential; `holders` says which profile each endpoint's entry in
- * `credentials.json` belongs to (the one most recently saved or switched to on that endpoint).
+ * Storage. `credentials.json` stays version 1 forever (`activeApiUrl` plus one credential per endpoint URL), so a project
+ * with an older CLI pinned keeps authenticating after the newest CLI logs in or out. Profiles live in `profiles.json`;
+ * tokens are never copied between the files. `holders` says which profile each endpoint's entry in `credentials.json` belongs to.
  */
 type Credentials = { activeProfile?: string; profiles: Record<string, Profile>; holders: Record<string, string> };
 
-/** The profile an existing machine-wide active endpoint becomes. */
 export const DEFAULT_PROFILE = "default";
 export const PROFILE_NAME = /^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$/;
 
@@ -76,7 +65,6 @@ function parseCredential(value: JsonValue | undefined): Credential | undefined {
   return { token, kind, team: str(input.team), teams };
 }
 
-/** A name for an endpoint that has none: its host, as `dash.sproutboat.com` or `localhost-8787`. */
 export function profileNameForUrl(apiUrl: string, taken: ReadonlySet<string>): string {
   let base: string;
   try {
@@ -95,16 +83,9 @@ export function profileNameForUrl(apiUrl: string, taken: ReadonlySet<string>): s
   return name;
 }
 
-/** The version 1 file as an older CLI reads it. */
 type V1 = { activeApiUrl?: string; endpoints: Record<string, Credential> };
-/** `profiles.json`: `credential` is absent for the profile that `credentials.json` holds for its endpoint. */
 type ProfilesFile = { activeProfile?: string; profiles: Record<string, { endpoint: string; credential?: Credential }> };
 
-/**
- * Today's credentials become profiles. The active endpoint is the `default` profile; every other stored
- * endpoint is named after its host. Nothing is dropped and nothing is repointed: with no active endpoint there is
- * no default profile, as before.
- */
 export function migrateV1(activeApiUrl: string | undefined, byUrl: Record<string, Profile>): Credentials {
   const profiles: Record<string, Profile> = {};
   const holders: Record<string, string> = {};
@@ -153,7 +134,6 @@ function parseProfilesFile(text: string | undefined): ProfilesFile | undefined {
   return { activeProfile: str(input.activeProfile), profiles };
 }
 
-/** Put the endpoint credentials of `credentials.json` and the profiles of `profiles.json` together. */
 function combine(v1: V1, file: ProfilesFile | undefined): Credentials {
   if (file === undefined || Object.keys(file.profiles).length === 0) {
     const byUrl: Record<string, Profile> = {};
@@ -292,11 +272,8 @@ async function readCredentials(): Promise<Credentials> {
   return parsed.credentials;
 }
 
-/**
- * The profile chosen with `--profile` or `SPROUTBOAT_PROFILE` for this run, set by `main.ts`. Every lookup and
- * write below goes to it; with none chosen they find a profile by endpoint (the active one first), and a login to
- * an endpoint nothing is stored for makes a new profile.
- */
+/** The profile chosen with `--profile` or `SPROUTBOAT_PROFILE` for this run, set by `main.ts`; with none, lookups find a
+ * profile by endpoint (the active one first) and a login to an unknown endpoint makes a new one. */
 let selected: string | undefined;
 
 export function selectProfile(name: string | undefined): void {
@@ -305,7 +282,6 @@ export function selectProfile(name: string | undefined): void {
 
 const sameUrl = (a: string, b: string) => a.replace(/\/$/, "") === b.replace(/\/$/, "");
 
-/** The stored profile for an endpoint: the selected one, else the active one, else the first one on that URL. */
 function findProfile(credentials: Credentials, apiUrl: string): { name: string; profile: Profile } | undefined {
   if (selected !== undefined) {
     const profile = credentials.profiles[selected];
@@ -318,7 +294,6 @@ function findProfile(credentials: Credentials, apiUrl: string): { name: string; 
   return found ? { name: found[0], profile: found[1] } : undefined;
 }
 
-/** Where a save for `apiUrl` goes: the selected profile, the profile already on that URL, or a new one. */
 function writeTarget(credentials: Credentials, apiUrl: string): string {
   if (selected !== undefined) {
     const existing = credentials.profiles[selected];
@@ -355,12 +330,10 @@ export async function getProfile(name: string): Promise<Profile | undefined> {
   return (await readCredentials()).profiles[name];
 }
 
-/** The machine's default profile: what a command uses when nothing names another one. */
 export async function activeProfileName(): Promise<string | undefined> {
   return (await readCredentials()).activeProfile;
 }
 
-/** `profile use`: make `name` the default profile. False when there is no such profile. */
 export async function useProfile(name: string): Promise<boolean> {
   const credentials = await readCredentials();
   if (!credentials.profiles[name]) return false;
@@ -370,7 +343,6 @@ export async function useProfile(name: string): Promise<boolean> {
   return true;
 }
 
-/** The name of the profile a command would use for this endpoint, if one is stored. */
 export async function savedProfileName(apiUrl: string): Promise<string | undefined> {
   return findProfile(await readCredentials(), apiUrl)?.name;
 }
@@ -383,18 +355,13 @@ export async function savedProfile(apiUrl: string): Promise<Profile | undefined>
   return findProfile(await readCredentials(), apiUrl)?.profile;
 }
 
-/** The endpoint of the machine's default profile. */
 export async function activeApiUrl(): Promise<string | undefined> {
   const credentials = await readCredentials();
   return credentials.activeProfile === undefined ? undefined : credentials.profiles[credentials.activeProfile].apiUrl;
 }
 
-/**
- * #79 `logout`: drop one endpoint's credential (the selected profile's, if one is selected). With `team`, only
- * that team's key is dropped from a Cloud profile; the default moves to a remaining team, and the profile goes only
- * when none is left. Returns `removed: false` when nothing matched. baronunread/sproutboat#204: dropping the
- * active profile clears it rather than picking another one by object key order.
- */
+/** #79 `logout`: drop one endpoint's credential. With `team`, only that team's key goes and the default moves to a remaining
+ * team. baronunread/sproutboat#204: dropping the active profile clears it rather than picking one by object key order. */
 export async function forgetToken(
   apiUrl: string,
   team?: string,
@@ -430,10 +397,6 @@ function saved(credentials: Credentials, profile: string): SaveResult {
   return { activeApiUrl: credentials.profiles[activeProfile].apiUrl, profile, activeProfile };
 }
 
-/**
- * baronunread/sproutboat#204: the machine's default profile is only set the first time (nothing saved yet);
- * a later login to a second endpoint keeps the existing one and reports it.
- */
 export async function saveToken(apiUrl: string, token: string, kind?: EndpointKind): Promise<SaveResult> {
   const credentials = await readCredentials();
   const name = writeTarget(credentials, apiUrl);
@@ -444,7 +407,6 @@ export async function saveToken(apiUrl: string, token: string, kind?: EndpointKi
   return saved(credentials, name);
 }
 
-/** Store one team's key for a Cloud profile. The newest login becomes that profile's default team. */
 export async function saveTeam(apiUrl: string, slug: string, team: StoredTeam): Promise<SaveResult> {
   const credentials = await readCredentials();
   const name = writeTarget(credentials, apiUrl);
@@ -456,7 +418,6 @@ export async function saveTeam(apiUrl: string, slug: string, team: StoredTeam): 
   return saved(credentials, name);
 }
 
-/** Decide which profile `credentials.json` holds for each endpoint: the one most recently saved or switched to there. */
 function settleHolders(credentials: Credentials): void {
   const holders: Record<string, string> = {};
   for (const [name, profile] of Object.entries(credentials.profiles)) {

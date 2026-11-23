@@ -1,15 +1,7 @@
 /**
- * Which endpoint and which stored profile a command talks to. One pure function, so the precedence is written down
- * once and tested:
- *
- *   1. `--api-url` and `--profile`, the flags. Both given must agree.
- *   2. `SPROUTBOAT_API_URL` and `SPROUTBOAT_PROFILE`, the environment. Both set must agree. A flag beats the other
- *      kind of variable: `--profile` beats `SPROUTBOAT_API_URL`, and `--api-url` beats `SPROUTBOAT_PROFILE`.
- *   3. The machine's active profile.
- *   4. The default endpoint.
- *
- * A profile fixes its endpoint, so a profile named next to a different URL is an error, never a quiet pick. That
- * is the mistake this exists to stop: a stored Community login deploying to Community when the Cloud was meant.
+ * Which endpoint and stored profile a command talks to: the flags (`--api-url`, `--profile`), then the environment, then
+ * the machine's active profile, then the default endpoint. A flag beats the other kind of variable. A profile fixes its
+ * endpoint, so a profile next to a different URL is an error, never a quiet pick: a stored Community login must not deploy there.
  */
 import { PROFILE_NAME } from "./credentials";
 
@@ -19,7 +11,6 @@ export type UrlSource = "--api-url" | "SPROUTBOAT_API_URL" | "profile" | "defaul
 export type Target = {
   apiUrl: string;
   source: UrlSource;
-  /** The profile selected by name, or the active one used for lack of anything else. Unset when the URL decided. */
   profile?: { name: string; source: ProfileSource; exists: boolean };
 };
 
@@ -28,11 +19,9 @@ export type TargetInput = {
   flagProfile?: string;
   envUrl?: string;
   envProfile?: string;
-  /** Stored profiles by name, with their endpoints. */
   profiles: Readonly<Record<string, { apiUrl: string }>>;
   activeProfile?: string;
   defaultUrl: string;
-  /** `login` may name a profile that does not exist yet; it is made on save. */
   allowNew?: boolean;
 };
 

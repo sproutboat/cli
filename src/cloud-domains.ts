@@ -1,9 +1,7 @@
 /**
- * `sproutboat domains` on the Sproutboat Cloud. A team claims a hostname (`domains add`), publishes the TXT record the Cloud
- * hands back, and `domains verify` has the Cloud look it up through two public resolvers. Once verified, the team may route
- * the name (`routes` of a deploy, or Settings, Domains in the dashboard) and its certificate is ordered at the first visit.
- * `list` shows the app's routes and the team's claims; `delete` releases a claim (refused while an app still routes it).
- * Wrangler has no such verb (Cloudflare owns the zone); the flow follows the Cloud's own routes, `/v1/domains`.
+ * `sproutboat domains` on the Cloud. A team claims a hostname, publishes the TXT record the Cloud hands back, and
+ * `domains verify` has the Cloud look it up through two public resolvers. Wrangler has no such verb (Cloudflare owns the
+ * zone); the flow follows the Cloud's own routes, `/v1/domains`.
  */
 import { CloudError } from "./cloud";
 import { makeCall, type CloudCredentials } from "./cloud-deploy";
@@ -15,7 +13,6 @@ export const PLATFORM_ZONE = ".sproutboat.app";
 export type CloudRoute = { route: string; custom: boolean };
 export type CloudRoutes = { routes: CloudRoute[]; applied: boolean | undefined; generation: number | undefined };
 
-/** The routes of a deployed app, in the order the spec holds them, each marked custom when it is not under sproutboat.app. */
 export async function listCloudRoutes(credentials: CloudCredentials, project: string): Promise<CloudRoutes> {
   const result = await makeCall(credentials)({ method: "GET", path: `/v1/apps/${project}`, ok: [404] });
   if (result.status === 404)
@@ -75,7 +72,6 @@ export async function listCloudClaims(credentials: CloudCredentials): Promise<Do
   });
 }
 
-/** The lines that tell the owner what to publish. */
 export function describeRecord(claim: DomainClaim): string[] {
   if (!claim.record) return [];
   return [
@@ -87,7 +83,6 @@ export function describeRecord(claim: DomainClaim): string[] {
 
 const WHAT = { pending: "waiting for the TXT record", verified: "verified", lost: "no longer yours" } as const;
 
-/** `domains list`'s second part, for the claims; empty when the team has none. */
 export function describeClaims(claims: DomainClaim[]): string[] {
   if (claims.length === 0) return [];
   const width = Math.max(...claims.map((c) => c.host.length));
@@ -102,7 +97,6 @@ export function describeClaims(claims: DomainClaim[]): string[] {
   return lines;
 }
 
-/** Claim a hostname. Idempotent: adding it again prints the same record. */
 export async function addCloudDomain(credentials: CloudCredentials, host: string): Promise<string[]> {
   const result = await makeCall(credentials)({ method: "POST", path: "/v1/domains", json: { host }, ok: [400, 429] });
   if (result.status === 400 || result.status === 429) throw new CloudError(errorLine(result.body, result.status));
@@ -140,7 +134,6 @@ export async function verifyCloudDomain(credentials: CloudCredentials, host: str
   ];
 }
 
-/** Release a claim. */
 export async function deleteCloudDomain(credentials: CloudCredentials, host: string): Promise<string[]> {
   const result = await makeCall(credentials)({
     method: "DELETE",
@@ -157,7 +150,6 @@ function errorLine(body: JsonObject | undefined, status: number): string {
   return text[0]!.toUpperCase() === text[0] ? text : `${text[0]!.toUpperCase()}${text.slice(1)}`;
 }
 
-/** The lines `domains list` prints for a Cloud app. */
 export function describeCloudRoutes(project: string, listed: CloudRoutes): string[] {
   if (listed.routes.length === 0) return [`${project} has no routes yet`];
   const width = Math.max(...listed.routes.map((entry) => entry.route.length));

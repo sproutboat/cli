@@ -1,7 +1,6 @@
 import { parseConfig, type ConfigValidation } from "./config";
 import { isBoolean, isString, jsonObject, parseJsonValue, type JsonObject, type JsonValue } from "./json";
 
-/** Blank out comments and trailing commas the way parseConfig does, then parse. Undefined when it is not a JSON object. */
 function parseLoose(source: string): JsonObject | undefined {
   let json = "";
   let quoted = false;
@@ -36,38 +35,28 @@ export function configAccount(source: string): string | undefined {
   return isString(account) && account !== "" ? account : undefined;
 }
 
-/**
- * `migrations_dir` (like Wrangler's, but top level: a Sproutboat app has its D1 databases by binding name only): the
- * directory `d1 migrations` keeps its .sql files in, relative to the project. Defaults to `migrations`. Undefined when
- * absent; an invalid value is reported by parseProjectConfig.
- */
+/** `migrations_dir` (like Wrangler's, but top level: a Sproutboat app names its D1 databases by binding only): where
+ * `d1 migrations` keeps its .sql files, relative to the project. Defaults to `migrations`. */
 export function configMigrationsDir(source: string): string | undefined {
   const dir = parseLoose(source)?.migrations_dir;
   return isString(dir) && dir !== "" ? dir : undefined;
 }
 
-/**
- * `workers_dev` (Wrangler's, with its meaning): whether the app is served on its platform name,
- * `<app>.<team>.sproutboat.app`, the counterpart of the `<worker>.<subdomain>.workers.dev` address. Undefined when the config
- * does not say. A value that is not a boolean is reported by parseProjectConfig.
- */
+/** `workers_dev` (Wrangler's meaning): whether the app is served on its platform name `<app>.<team>.sproutboat.app`, the
+ * counterpart of `<worker>.<subdomain>.workers.dev`. */
 export function configWorkersDev(source: string): boolean | undefined {
   const value = parseLoose(source)?.workers_dev;
   return isBoolean(value) ? value : undefined;
 }
 
 export type WorkersDev = {
-  /** Whether a deploy puts the platform name among the app's routes (true) or takes it out (false). */
   enabled: boolean;
-  /** Where the value comes from: the config says it, or it is Wrangler's default. */
   from: "config" | "default";
 };
 
 /**
- * What a deploy does with the platform name. Wrangler defaults `workers_dev` to true when the config has no `route` or
- * `routes` and to false otherwise. This config has no `route` or `routes` (the schema refuses them), so the default is always
- * true; when they arrive, the default turns false for a config that declares one and an explicit `workers_dev: true` keeps the
- * platform name beside them, exactly as in Wrangler.
+ * Wrangler defaults `workers_dev` to true without `route`/`routes` and false with them. This config refuses both, so
+ * the default is always true; when they arrive, an explicit `workers_dev: true` keeps the platform name beside them.
  */
 export function resolveWorkersDev(declared: boolean | undefined): WorkersDev {
   return declared === undefined ? { enabled: true, from: "default" } : { enabled: declared, from: "config" };
@@ -78,14 +67,10 @@ const MIGRATIONS_DIR_ERROR = 'migrations_dir must be a relative folder inside th
 const validMigrationsDir = (dir: JsonValue | undefined): boolean =>
   isString(dir) && dir !== "" && !dir.startsWith("/") && !/^[A-Za-z]:/.test(dir) && !dir.split(/[\\/]/).includes("..");
 
-/** The `main` a project with assets and no `main` gets: a file that does not exist, written by `readProject` into `.sproutboat/`. */
 export const ASSETS_ONLY_MAIN = "src/.assets-only.js";
 
-/**
- * The entry a Worker with only static assets runs, as Wrangler allows (`assets` and no `main`). The platform serves a matching
- * file before any code runs; a request that matches none reaches this, and `env.<binding>.fetch` answers it with the project's
- * `not_found_handling`: the single-page app shell, the nearest 404 page, or a plain 404.
- */
+/** The entry of a Worker with only static assets, as Wrangler allows: the platform serves a matching file before any code
+ * runs, and a miss reaches this, which answers it with the project's `not_found_handling`. */
 export function assetsOnlySource(binding: string): string {
   return [
     "// Written by sproutboat: this project has `assets` and no `main`, so it is a Worker with only static assets.",
@@ -98,20 +83,14 @@ export function assetsOnlySource(binding: string): string {
   ].join("\n");
 }
 
-/** `assets` with a directory and no `main`: the assets-only case. The entry and the binding it calls are filled in. */
 function withAssetsOnlyEntry(config: JsonObject): JsonObject {
   const assets = jsonObject(config.assets ?? null);
   if (config.main !== undefined || assets === undefined) return config;
   return { ...config, main: ASSETS_ONLY_MAIN, assets: { ...assets, binding: assets.binding ?? "ASSETS" } };
 }
 
-/** The CLI-owned fields: validated here and removed before the shared schema sees them. */
 const CLI_FIELDS = ["account", "migrations_dir", "workers_dev"];
 
-/**
- * parseConfig for a file that may carry the CLI-owned fields `account`, `migrations_dir` and `workers_dev`: they are validated
- * here and removed before the shared schema sees them.
- */
 export function parseProjectConfig(source: string): ConfigValidation {
   const loose = parseLoose(source);
   if (loose === undefined) return parseConfig(source);
@@ -129,10 +108,7 @@ export function parseProjectConfig(source: string): ConfigValidation {
   return parseConfig(JSON.stringify(withAssetsOnlyEntry(rest)));
 }
 
-/**
- * The one line a Cloud deploy prints about the platform name: on or off, and why. `host` is the platform name when the team is
- * known (--prepare-out runs with no team, so it says "the platform name").
- */
+/** The one line a Cloud deploy prints about the platform name: on or off, and why. */
 export function describePlatformName(workersDev: WorkersDev, file: string, host: string | undefined): string {
   const name = host ?? "the platform name";
   if (workersDev.enabled)

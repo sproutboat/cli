@@ -15,7 +15,6 @@ const PERMISSION = { list: "secret:list", write: "secret:write" } as const satis
 const notDeployed = (project: string) =>
   `${project} is not deployed yet, so it has nowhere to keep secrets: run \`sproutboat deploy\` first, or pass them on the first deploy with --secrets-file <file>`;
 
-/** One call; the 403 and the missing app become sentences of their own. */
 async function secretCall(
   credentials: CloudCredentials,
   project: string,
@@ -46,7 +45,6 @@ export async function listCloudSecrets(credentials: CloudCredentials, project: s
   return Array.isArray(names) ? names.filter(isString) : [];
 }
 
-/** Returns the record generation the write produced. */
 export async function putCloudSecret(
   credentials: CloudCredentials,
   project: string,
@@ -64,7 +62,6 @@ export async function putCloudSecret(
 
 type SecretsPatchBody = { set?: Record<string, string>; delete?: string[] };
 
-/** One PATCH that sets and deletes many secrets at once; returns the record generation it produced. */
 export async function patchCloudSecrets(
   credentials: CloudCredentials,
   project: string,

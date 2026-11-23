@@ -1,12 +1,7 @@
 /**
- * The CLI describes itself. This test renders the command / env / toolchain
- * surface to `SURFACE.md` at the repo root and fails if the committed file is
- * stale — regenerate with `UPDATE_SURFACE=1 bun test`.
- *
- * It also cross-checks the source so the doc can't quietly drift:
- *   - every `case "x":` in main.ts's command switch is in COMMANDS, and vice versa
- *   - every SPROUTBOAT_* / PORFFOR_VERSION / XDG_CONFIG_HOME env read in src/
- *     (outside tests) is documented in ENV_VARS
+ * The CLI describes itself: this renders the command, env and toolchain surface to `SURFACE.md` (`UPDATE_SURFACE=1 bun test`)
+ * and cross-checks the source so the doc cannot drift: every `case` in main.ts's command switch is in COMMANDS, and every
+ * env var read in src/ (outside tests) is in ENV_VARS.
  */
 import { describe, expect, test } from "bun:test";
 import { readdirSync, readFileSync, writeFileSync } from "node:fs";
@@ -122,20 +117,15 @@ test("no COMMANDS entry documents an env var that src/ never reads", () => {
   for (const file of readdirSync(srcDir)) {
     if (!file.endsWith(".ts") || file.endsWith(".test.ts")) continue;
     const text = readFileSync(resolve(srcDir, file), "utf8");
-    // Two characters, not four: CC and AR are real env vars and the old bound
-    // could never see them. Loose on purpose — some documented vars are set for
-    // a child process rather than read here (SB_EXTRA_LINK), so this only asks
-    // that the name appears in src/ at all.
+    // Two characters, not four: CC and AR are real env vars. Loose on purpose: some documented vars are set for a child process
+    // rather than read here (SB_EXTRA_LINK), so this only asks that the name appears in src/ at all.
     for (const m of text.matchAll(/([A-Z][A-Z0-9_]+)/g)) referenced.add(m[1]);
   }
   const stale = ENV_VARS.map((e) => e.name).filter((name) => !referenced.has(name));
   expect(stale, `ENV_VARS lists names not found anywhere in src/: ${stale.join(", ")}`).toEqual([]);
 });
 
-/**
- * #79 — the storage products are the CLI's one place where four commands must
- * stay identical. These guard the promise the help text makes.
- */
+/** #79: the storage products are the one place where four commands must stay identical. */
 test("every storage product is a command with the same verbs", () => {
   const documented = new Set(COMMANDS.filter((c) => c.group === "Storage").map((c) => c.name));
   expect([...documented].sort()).toEqual(STORAGE_PRODUCTS.map((p) => p.name).sort());
@@ -152,7 +142,6 @@ test("main.ts dispatches every storage product to the shared handler", () => {
   }
 });
 
-/** The grouped help is what people read first: keep it short, plain and aligned. */
 describe("the top-level help", () => {
   // Colour is off whenever stdout is not a TTY, as it is under the test runner.
   const plain = helpText();

@@ -8,15 +8,11 @@ import { isSafeInteger, isString, type JsonObject } from "./json";
 /** Every status a data route can answer with besides success, so `makeCall` hands them back instead of throwing. */
 export const DATA_ERROR_STATUSES = [400, 403, 404, 409, 411, 413, 422, 429, 501, 502, 503, 504, 507];
 
-/** What the caller was doing, for the messages. */
 export type DataContext = {
   project: string;
-  /** "D1" or "R2". */
   product: "D1" | "R2";
-  /** "database" or "bucket". */
   noun: "database" | "bucket";
   name: string;
-  /** What the action is, for a missing grant: "read data", "change data". */
   write: boolean;
 };
 
@@ -28,7 +24,6 @@ export const CAPTURE_ACTIVE =
 
 const NOT_YET = "remote D1/R2 isn't available on this Cloud host yet";
 
-/** Seconds to wait, from the body's `retry_after` or the `retry-after` header. */
 function retryAfter(reply: DataReply): number | undefined {
   const fromBody = reply.body?.retry_after;
   if (isSafeInteger(fromBody) && fromBody > 0) return fromBody;
@@ -41,7 +36,6 @@ const wait = (reply: DataReply) => {
   return seconds === undefined ? "try again shortly" : `try again in ${seconds} s`;
 };
 
-/** The grant a 403 says is missing, and how to get it. */
 function missingGrant(need: string | undefined, product: DataContext["product"], write: boolean): string {
   const grant = need === "data:read" || need === "data:write" ? need : write ? "data:write" : "data:read";
   const what =

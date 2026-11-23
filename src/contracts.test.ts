@@ -1,16 +1,7 @@
 /**
- * The contracts that outlive a release.
- *
- * Three things here can never be broken quietly, because artifacts are
- * immutable and `rollback` can reactivate one built any time: the manifest a
- * stored artifact was validated against, the wire a compiled prelude speaks to
- * the broker, and the on-disk shape of a storage resource whose data outlives
- * every redeploy.
- *
- * So this renders them to `CONTRACTS.md` and fails when the committed file is
- * stale — regenerate with `UPDATE_CONTRACTS=1 bun test`. The point is not the
- * document: it is that changing a frozen contract cannot happen without a
- * visible diff in a file whose header says what freezing means.
+ * The contracts that outlive a release: artifacts are immutable and `rollback` can reactivate one built any time, so the
+ * manifest, the prelude-to-broker wire and the on-disk shape of a storage resource can never break quietly. They are
+ * rendered to `CONTRACTS.md` (`UPDATE_CONTRACTS=1 bun test`) so changing one needs a visible diff.
  */
 import { expect, test } from "bun:test";
 import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
@@ -25,11 +16,7 @@ import { CONTROL_VERSION_HEADER, MIN_CLI_HEADER } from "./api-version";
 const srcDir = import.meta.dir;
 const root = resolve(srcDir, "..");
 
-/**
- * Source text of a shared-package module. config.ts and manifest.ts moved to
- * @sproutboat/* (src/ files here are re-export shims), so the doc generator
- * reads the single source of truth from the linked packages.
- */
+/** Source text of a shared-package module: config.ts and manifest.ts moved to @sproutboat/*, so the docs read the linked packages. */
 function pkgSource(pkg: string, file: string): string {
   return readFileSync(resolve(root, "node_modules", pkg, "src", file), "utf8");
 }
@@ -40,14 +27,12 @@ function brokerOps(): string[] {
   return [...source.matchAll(/case "([a-z0-9_]+(?:\.[a-z0-9_]+)*)":/g)].map((m) => m[1]).sort();
 }
 
-/** Every table the broker creates, i.e. the shape a resource file is stuck with. */
 function storageTables(): string[] {
   return [...pkgSource("@sproutboat/wire", "broker.ts").matchAll(/CREATE TABLE IF NOT EXISTS (\w+)/g)]
     .map((m) => m[1])
     .sort();
 }
 
-/** Pull a quoted-string array/Set literal out of source text by its declaration. */
 function stringListFrom(source: string, file: string, declaration: string): string[] {
   const start = source.indexOf(declaration);
   if (start === -1) throw new Error(`${file}: could not find ${declaration}`);

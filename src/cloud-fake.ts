@@ -9,7 +9,6 @@ import { splitSql } from "./sql-split";
 export const FAKE_KEY = "sbk_fakekey0123456789";
 
 export type FakeOptions = {
-  /** Replies to POST /v1/device/token, in order; the last one repeats. */
   tokenReplies?: { status: number; body: JsonObject }[];
   role?: string;
   applyStates?: string[];
@@ -35,12 +34,9 @@ export type FakeOptions = {
   dataFailure?: { status: number; body?: JsonObject; headers?: Record<string, string> };
   /** R2 buckets the app's host holds (binding names): /v1/apps/<p>/r2/<BUCKET>/objects/<key> stores objects in memory. */
   r2?: string[];
-  /** How POST /v1/apps/<project>/builds behaves. */
   build?: FakeBuildOptions;
-  /**
-   * The team's custom-domain claims (/v1/domains, design 025): `published` are hosts whose TXT record the resolvers show (verify passes),
-   * `heldByOther` are hosts another team has verified (verify is 409), `claims` are claims that exist already.
-   */
+  /** The team's custom-domain claims (/v1/domains): `published` hosts show their TXT record (verify passes), `heldByOther`
+   * hosts another team verified (verify is 409), `claims` already exist. */
   domains?: {
     published?: string[];
     heldByOther?: string[];
@@ -56,13 +52,10 @@ export type FakeBuildOptions = {
   mode?: "ready" | "cached" | "failed" | "memory-cap" | "hang" | "disabled" | "no-builder" | "queue-full";
   logs?: string[];
   position?: number | null;
-  /** The queued state carries this `waiting` text (builder holding work back), then the build starts. */
   waiting?: string;
   wallMs?: number;
   peakMemoryBytes?: number | null;
-  /** Drop the first events connection after this many log frames. */
   dropAfterLogs?: number;
-  /** Refuse the events route altogether, so the client has to poll. */
   noEvents?: boolean;
   errorMessage?: string;
 };
@@ -767,13 +760,10 @@ export function startFakeCloud(options: FakeOptions = {}) {
     manifests,
     sources,
     buildRequests,
-    /** Bodies of POST /v1/apps/<app>/d1/<BINDING>/query. */
     d1Requests,
     /** Objects in the fake host's buckets, by `<BUCKET>/<key>`; `headers` are the stored metadata (content-type, cache-control, ...). */
     objects,
-    /** Every PUT to an object route: the decoded key and the request headers. */
     putRequests,
-    /** The fake host's databases, to look at what a command left behind. */
     databases,
     eventRequests,
     cancels,
@@ -783,9 +773,7 @@ export function startFakeCloud(options: FakeOptions = {}) {
     get revoked() {
       return revoked;
     },
-    /** Every spec the Cloud accepted, secrets_patch and all (values are the test's own). */
     written,
-    /** Bodies of PATCH /v1/apps/<app>/secrets. */
     patches,
     get secrets() {
       return Object.fromEntries([...secretStore.entries()].sort());

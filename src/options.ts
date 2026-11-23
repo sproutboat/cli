@@ -1,24 +1,13 @@
 /**
- * What each command accepts after the global flags are out (global-flags.ts), checked once, before the command runs.
- * A flag a command does not know is an error, never a quiet no-op: a typo or a flag from another tool must not turn
- * into a different action (`deploy --api-url=<url>` used to be ignored and deployed to the saved endpoint).
- *
- * `--flag=value` is rewritten to `--flag value`, so every command parses one form. A positional that looks like a
- * URL is refused for the commands that take a project directory or a name, so `deploy https://dash.example.com` is
- * never read as a folder.
- *
- * The table is documentation too: `surface.test.ts` fails when a flag in a command's grammar (surface.ts) is not here.
+ * What each command accepts after the global flags are out, checked once before it runs. A flag a command does not know is
+ * an error, never a quiet no-op (`deploy --api-url=<url>` used to be ignored and deployed to the saved endpoint). The table
+ * is documentation too: `surface.test.ts` fails when a flag in a command's grammar (surface.ts) is not here.
  */
 export type Options = {
-  /** Flags that take the next argument (or `=value`) as their value. */
   readonly value?: readonly string[];
-  /** Flags that stand alone. */
   readonly flag?: readonly string[];
-  /**
-   * Subcommands with options of their own, keyed by their leading words (`"execute"`, `"migrations apply"`): when the
-   * arguments start with one, its entry is what is checked, and the command's own `value`/`flag` are not.
-   * Arguments that start with none of them are checked against the command's own options.
-   */
+  /** Subcommands with options of their own, keyed by their leading words: when the arguments start with one, its entry is
+   * what is checked, and the command's own `value`/`flag` are not. */
   readonly sub?: Readonly<Record<string, Options>>;
   /**
    * The command's subcommands parse (and refuse) their own options, so only the plain verbs are checked, where the
@@ -140,7 +129,6 @@ export const COMMAND_OPTIONS = {
   complete: {},
 } as const satisfies Record<string, Options>;
 
-/** The commands that talk to a control plane, so `--api-url` means something to them. */
 export const ENDPOINT_COMMANDS: ReadonlySet<string> = new Set([
   "deploy",
   "versions",
@@ -168,7 +156,6 @@ export type OptionsCheck = { args: string[] } | { error: string };
 
 const flagsOf = (spec: Options) => [...(spec.value ?? []), ...(spec.flag ?? [])];
 
-/** The subcommand's options when `args` start with one of the command's `sub` entries (one or two words). */
 function subOptions(spec: Options, args: readonly string[]): Options | undefined {
   if (!spec.sub) return undefined;
   const named = [args.slice(0, 2).join(" "), args.slice(0, 1).join(" ")];
@@ -176,12 +163,10 @@ function subOptions(spec: Options, args: readonly string[]): Options | undefined
   return undefined;
 }
 
-/** Every flag a command takes in any of its forms: its own and its subcommands'. */
 export function allFlags(spec: Options): string[] {
   return [...new Set([...flagsOf(spec), ...Object.values(spec.sub ?? {}).flatMap(flagsOf)])];
 }
 
-/** The closest known flag to a mistyped one, when one is near enough to be a typo. */
 function suggest(name: string, known: readonly string[]): string | undefined {
   const distance = (a: string, b: string) => {
     const row = Array.from({ length: b.length + 1 }, (_, at) => at);
@@ -202,10 +187,7 @@ function suggest(name: string, known: readonly string[]): string | undefined {
   return best && best.away <= 2 ? best.candidate : undefined;
 }
 
-/**
- * Check `args` (what is left after the global flags) for `command`. Returns them with `--flag=value` split in two, or
- * the first problem. A command that is not in the table is not checked here.
- */
+/** `args` with `--flag=value` split in two, or the first problem. A command that is not in the table is not checked. */
 export function checkOptions(command: string, args: readonly string[]): OptionsCheck {
   if (!Object.hasOwn(COMMAND_OPTIONS, command)) return { args: [...args] };
   // SAFETY: `command` is a key of the table, checked above.

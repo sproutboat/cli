@@ -1,11 +1,6 @@
 /**
- * #15 — `sproutboat build --standalone`.
- *
- * Emits ONE executable carrying the compiled sprout, its static assets and its
- * binding declarations, with SQLite linked in so there is no broker and no
- * second process. The build is thin on purpose: `buildArtifact` with the
- * embedded transport already produces exactly the binary we want, so this
- * copies it out and enforces the one thing a standalone binary cannot do.
+ * #15: `sproutboat build --standalone`. One executable with the compiled sprout, its assets and binding declarations and
+ * SQLite linked in. `buildArtifact` with the embedded transport already produces that binary, so this copies it out.
  */
 import { existsSync, readFileSync } from "node:fs";
 import { chmod, cp, mkdir } from "node:fs/promises";
@@ -16,17 +11,12 @@ import { ASSETS_STORE_MIN_DATE } from "./cloud-deploy";
 import type { Bindings } from "./wrap";
 
 export type StandaloneBuildInput = BuildInput & {
-  /** Where to write the executable. Defaults to `<projectDir>/dist/<name>`. */
   outPath?: string;
-  /**
-   * The release build: `-flto -O3`, the binary to publish. Off by default: units still compile at -O3 but
-   * the link skips LTO, which is 1.5 to 2x faster cold and links in ~90 MB instead of 1.1 to 1.6 GB, at some
-   * request throughput (docs/standalone.md, "Dev and release builds").
-   */
+  /** The release build (`-flto -O3`). Off by default: units still compile at -O3 but the link skips LTO, 1.5 to 2x faster
+   * cold and ~90 MB instead of 1.1 to 1.6 GB, at some request throughput (docs/standalone.md). */
   release?: boolean;
 };
 
-/** `--release` or `SPROUTBOAT_RELEASE=1` (`0`, empty or unset: not a release build). */
 export function isReleaseBuild(args: string[], env: Record<string, string | undefined> = process.env): boolean {
   if (args.includes("--release")) return true;
   const value = env.SPROUTBOAT_RELEASE;
@@ -35,16 +25,8 @@ export function isReleaseBuild(args: string[], env: Record<string, string | unde
 
 export type StandaloneBuildResult = { outPath: string; bytes: number };
 
-/**
- * Bindings a standalone binary cannot serve.
- *
- * A build error, not a runtime no-op: a binary whose binding silently does
- * nothing is discovered in production, on a device someone has to reach
- * physically.
- *
- * Outbound `fetch` is absent from this list: http and https both work, with
- * BearSSL and the Mozilla root set compiled in.
- */
+/** Bindings a standalone binary cannot serve. A build error, not a runtime no-op: a binding that silently does nothing is
+ * discovered in production, on a device someone has to reach physically. */
 export function unsupportedBindings(bindings: Pick<Partial<Bindings>, "services">): string[] {
   const reasons: string[] = [];
   if ((bindings.services ?? []).length > 0) {
@@ -61,11 +43,9 @@ function assertStandaloneSupported(input: BuildInput): void {
 }
 
 /**
- * Whether the worker of a Cloud deploy can read its own assets, so the module would have to carry them. Cloudflare gives the worker
+ * Whether the worker of a Cloud deploy reads its own assets, so the module would have to carry them: Cloudflare gives it
  * `env.<BINDING>` only when `assets.binding` is set, and runs it before the files only for `run_worker_first` (here
- * `run_sprout_first`): `true` or a non-empty route list. A worker with either calls `env.ASSETS.fetch(request)`, which reads the
- * module's embedded files; the Cloud's edge serves a request the worker never sees. An app with neither has its files served
- * by the edge alone, and the module carries none. Whether the files FIT is `planAssetBake`'s question.
+ * `run_sprout_first`). Otherwise the edge serves the files alone. Whether they FIT is `planAssetBake`'s question.
  */
 export function workerReadsAssets(assets: BuildInput["config"]["assets"]): boolean {
   if (!assets) return false;
@@ -73,56 +53,32 @@ export function workerReadsAssets(assets: BuildInput["config"]["assets"]): boole
   return Boolean(assets.binding) || first === true || (Array.isArray(first) && first.length > 0);
 }
 
-/**
- * The module ABI region for static data: the patched Porffor linker throws `static data exceeds module ABI region` when the data
- * of ONE module reaches this many bytes (toolchain a21 patch, `off >= 1048576`). It counts every string literal of the module
- * (runtime prelude, the worker's own strings, the baked files and their manifest), not code.
- */
+/** The patched Porffor linker throws `static data exceeds module ABI region` when ONE module's static data (every string
+ * literal: prelude, the worker's strings, baked files and manifest) reaches this many bytes (toolchain a21 patch). */
 export const MODULE_STATIC_LIMIT = 1_048_576;
 /** Kept free below the limit so a prelude that grows, or an estimate that is a little low, never turns into a failed deploy. */
 export const MODULE_STATIC_MARGIN = 65_536;
-/**
- * Static data of a module with no assets and no strings of its own: measured at 126,080 bytes with runtime 0.47 (a render of the
- * kitchen-sink shape, bisecting the file size until the linker threw), rounded up.
- */
+/** Static data of a module with no assets and no strings of its own: measured at 126,080 bytes with runtime 0.47, rounded up. */
 export const MODULE_STATIC_BASE = 131_072;
-/**
- * Static data one baked file costs besides its bytes. Measured at 102 to 125 bytes per file (1,000 and 3,000 files, keys of about
- * 40 characters): the key (kept once, the manifest and the file map share it), the 64-character hash and the entry's other
- * strings. Used as key length + this, which stays above the measured cost.
- */
+/** Static data one baked file costs besides its bytes: measured at 102 to 125 bytes per file (1,000 and 3,000 files, keys of
+ * about 40 characters). Used as key length + this, which stays above the measured cost. */
 const STATIC_PER_FILE = 88;
 
 export type AssetBakePlan = {
-  /** The worker would read its assets (see workerReadsAssets). */
   reads: boolean;
-  /** The files go into the module: the worker reads them and they fit. */
   bake: boolean;
   files: number;
-  /** Raw size of the files. */
   fileBytes: number;
-  /** Static data the baked files and their manifest would take. */
   bakedBytes: number;
-  /** What the module can spend on them: the limit minus the margin, the base and the worker's own strings. */
   budget: number;
-  /** `bakedBytes` past `budget`; 0 when it fits. */
   overBy: number;
-  /**
-   * The project's compatibility date is ASSETS_STORE_MIN_DATE or later: the runtime reads the files that are not in the module from the
-   * Cloud's asset store, so leaving them out costs the worker nothing.
-   */
   store: boolean;
 };
 
 /**
- * Decide whether a Cloud emit bakes the assets into the module: only when the worker reads them AND they fit. Bytes are measured
- * on what the build puts into static data, not the directory size: a baked file is a latin1 string (one byte per byte, binary or
- * text alike, confirmed against the linker), plus per file its key and manifest entry, plus the worker's own strings. The worker's
- * source counts in full (its code takes no static data, so this is an upper bound: a margin, not a measurement).
- *
- * The files that do not fit stay out, as in 0.58.0, and the edge still serves them from the Cloud asset store. With a compatibility date of
- * ASSETS_STORE_MIN_DATE or later the worker's `env.ASSETS.fetch` reads them from that store too (`store`); before it, it finds none, and the
- * deploy warns.
+ * Bake the assets into a Cloud emit only when the worker reads them AND they fit. Bytes are measured as static data: a baked
+ * file is a latin1 string (one byte per byte), plus its key and manifest entry, plus the worker's own strings in full (an
+ * upper bound). Files that do not fit stay out and the edge still serves them; from ASSETS_STORE_MIN_DATE the worker reads them too.
  */
 export function planAssetBake(input: BuildInput): AssetBakePlan {
   const assets = input.config.assets;
@@ -153,7 +109,6 @@ export function planAssetBake(input: BuildInput): AssetBakePlan {
   return { reads, bake: overBy === 0, files: Object.keys(files).length, fileBytes, bakedBytes, budget, overBy, store };
 }
 
-/** The deploy's "assets" detail: which way the files go and why. */
 export function describeAssetBake(plan: AssetBakePlan): string {
   const bytes = (n: number) => n.toLocaleString("en-US");
   if (!plan.reads) return "served by the edge, none in the module (the worker does not read env.ASSETS)";
@@ -165,10 +120,7 @@ export function describeAssetBake(plan: AssetBakePlan): string {
   return `served by the edge, none in the module (the worker reads env.ASSETS but ${tooBig}; set compatibility_date ${ASSETS_STORE_MIN_DATE} or later and it reads them from the Cloud's asset store)`;
 }
 
-/**
- * The warning for a worker that reads its assets whose files do not fit, or undefined. None from ASSETS_STORE_MIN_DATE on: the worker reads
- * them from the Cloud's asset store, so nothing is lost.
- */
+/** The warning for a worker that reads assets that do not fit, or undefined (none from ASSETS_STORE_MIN_DATE on). */
 export function assetBakeWarning(plan: AssetBakePlan): string | undefined {
   if (!plan.reads || plan.bake || plan.store) return undefined;
   return (
@@ -178,22 +130,17 @@ export function assetBakeWarning(plan: AssetBakePlan): string | undefined {
   );
 }
 
-/**
- * `sproutboat build --standalone --emit-only`: the standalone build up to and
- * including `sprout.generated.js`, byte for byte what a full standalone build
- * compiles, at the same path. Every check that fails a standalone build fails
- * this too; nothing native is acquired or compiled and no binary is copied out.
- */
+/** `build --standalone --emit-only`: byte for byte what a full standalone build compiles, at the same path, with every
+ * check; nothing native is acquired or compiled. */
 export async function emitStandalone(
   input: BuildInput,
   /** The Cloud compiles this unit and its hosts supply service bindings, so a deploy to the Cloud keeps them. */
   options: { forCloud?: boolean } = {},
 ): Promise<{ generatedPath: string; assetBake?: AssetBakePlan }> {
   if (!options.forCloud) assertStandaloneSupported(input);
-  // A Cloud deploy sends the assets as a manifest the Cloud's edge serves; baking them into the module breaks its compile past about 1 MiB
-  // ("static data exceeds module ABI region"). A worker that reads its assets (a binding, or run_sprout_first) keeps them in the module
-  // as well, as in 0.57.0, but only when they fit: past the limit they stay out (0.58.0), and the plan says so (and, from ASSETS_STORE_MIN_DATE, that the
-  // worker reads them from the Cloud's asset store).
+  // A Cloud deploy sends the assets as a manifest the edge serves: baking them in breaks the compile past about 1 MiB. A worker
+  // that reads its assets keeps them in the module only when they fit (as in 0.57.0); past that they stay out (0.58.0) and
+  // the plan says so.
   const assetBake = options.forCloud === true ? planAssetBake(input) : undefined;
   const bakeAssets = assetBake === undefined || assetBake.bake;
   const { generatedPath } = await emitGenerated({ ...input, transport: "embedded", bakeAssets });
@@ -205,8 +152,6 @@ export async function buildStandalone(input: StandaloneBuildInput): Promise<Stan
   const { release, ...rest } = input;
   const artifact = await buildArtifact({ ...rest, transport: "embedded", lto: release === true });
 
-  // The sprout *is* the binary: assets and bindings are compiled into it, and
-  // everything else it needs (port, data dir, secrets) arrives at run time.
   const outPath = input.outPath ?? resolve(input.projectDir, "dist", input.config.name);
   await mkdir(resolve(outPath, ".."), { recursive: true });
   await cp(resolve(artifact.artifactDir, "sprout"), outPath);

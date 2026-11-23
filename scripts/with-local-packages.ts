@@ -1,19 +1,8 @@
 #!/usr/bin/env bun
 /**
- * Run a command against local `@sproutboat/{runtime,toolchain,wire}` checkouts.
- *
- *   bun scripts/with-local-packages.ts <path-to-sproutboat-packages> [--only runtime,toolchain,wire] -- <command...>
- *
- * Moves each `node_modules/@sproutboat/<pkg>` aside, symlinks
- * `<packages>/packages/<pkg>` in its place, runs the command with inherited
- * stdio, then puts the original entries back. The restore runs whatever the
- * command does: a non-zero exit, a throw here, SIGINT or SIGTERM. Only SIGKILL
- * can skip it, and the next run repairs that before it starts (the moved-aside
- * entry is left in a known place for exactly that reason).
- *
- * Refuses to run in the main checkout when it has uncommitted changes. Work in
- * progress lives there, and anything already running from it (a dev server, a
- * watcher) would silently pick up the linked packages. Use a worktree instead.
+ * Run a command against local `@sproutboat/{runtime,toolchain,wire}` checkouts: symlinks `<packages>/packages/<pkg>` over each
+ * `node_modules/@sproutboat/<pkg>`, then puts the originals back, whatever the command does (only SIGKILL skips it; the next
+ * run repairs that). Refuses a dirty main checkout: anything already running from it would pick up the linked packages.
  */
 import { existsSync, lstatSync, readlinkSync, renameSync, rmSync, symlinkSync } from "node:fs";
 import { resolve } from "node:path";
@@ -29,8 +18,6 @@ function fail(message: string): never {
   console.error(`with-local-packages: ${message}`);
   process.exit(2);
 }
-
-// ---- arguments ----------------------------------------------------------
 
 const argv = process.argv.slice(2);
 const separator = argv.indexOf("--");
@@ -65,8 +52,6 @@ if (!packagesRoot) fail(`missing the path to a sproutboat-packages checkout\n${U
 if (!existsSync(resolve(packagesRoot, "packages")))
   fail(`${packagesRoot} has no packages/ directory: is it a sproutboat-packages checkout?`);
 
-// ---- safety: never touch a dirty main checkout --------------------------
-
 const cliRoot = resolve(import.meta.dir, "..");
 function git(...args: string[]): string {
   const result = Bun.spawnSync(["git", "-C", cliRoot, ...args], { stdout: "pipe", stderr: "pipe" });
@@ -86,8 +71,6 @@ if (!linkedWorktree && git("status", "--porcelain") !== "") {
   );
 }
 
-// ---- link ---------------------------------------------------------------
-
 const scope = resolve(cliRoot, "node_modules/@sproutboat");
 const entryPath = (pkg: Pkg) => resolve(scope, pkg);
 const backupPath = (pkg: Pkg) => resolve(scope, `.${pkg}.with-local-packages-backup`);
@@ -100,7 +83,6 @@ const exists = (path: string) => {
   }
 };
 
-/** Put one package's original entry back. Synchronous so the exit hook can use it. */
 function restore(pkg: Pkg): void {
   const entry = entryPath(pkg);
   const backup = backupPath(pkg);

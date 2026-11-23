@@ -1,23 +1,7 @@
 /**
- * `sproutboat run`: launch a standalone binary with the settings it takes at
- * launch (#275), without baking any of them into it.
- *
- * A standalone binary reads its port, data directory and secrets from the
- * environment and nothing from argv. This command builds that environment from
- * three layers and starts the binary with it. Highest precedence first:
- *
- * 1. explicit launch options: `--port` (PORT) and `--data-dir` (SB_DATA_DIR);
- * 2. the files given with `--env-file` (dotenv syntax, see env-file.ts; repeat
- *    the flag and a later file overrides an earlier one);
- * 3. the environment this command inherited, which is how a service manager
- *    hands a production binary its settings.
- *
- * Unlike `dev`, which warns, a launch fails when a declared secret (the
- * config's `secrets` plus any `--require`) is unset or empty, as
- * `wrangler deploy` does for a missing required secret. Nothing starts. The same binary therefore moves between a
- * laptop and a server with a different env file, port and data directory.
- * Nothing is written to disk and no value is ever printed: the summary names
- * secrets and the layer each came from.
+ * `sproutboat run`: launch a standalone binary with the settings it takes at launch (#275) without baking any into it.
+ * Precedence, highest first: `--port` and `--data-dir`, the `--env-file` files (a later one overrides), the inherited
+ * environment. Unlike `dev`, a declared secret that is unset or empty fails the launch. No value is ever printed.
  */
 import { existsSync } from "node:fs";
 import { readFile } from "node:fs/promises";
@@ -43,7 +27,6 @@ const NAME = /^[A-Za-z_][A-Za-z0-9_]*$/;
 export type RunArgs = {
   dir: string | undefined;
   binary: string | undefined;
-  /** Every `--env-file`, in the order given. */
   envFiles: string[];
   port: number | undefined;
   dataDir: string | undefined;
@@ -51,7 +34,6 @@ export type RunArgs = {
   check: boolean;
 };
 
-/** Parse `run` arguments; `error` is a usage error message. */
 export function parseRunArgs(args: string[]): { args: RunArgs } | { error: string } {
   const parsed: RunArgs = {
     dir: undefined,
@@ -92,7 +74,6 @@ export function parseRunArgs(args: string[]): { args: RunArgs } | { error: strin
   return { args: parsed };
 }
 
-/** A launch that cannot proceed for a reason the user can fix; the message is safe to print. */
 export class RunError extends Error {}
 
 export type RunPlan = {
@@ -106,7 +87,6 @@ export type RunPlan = {
   warnings: string[];
 };
 
-/** Resolve what to launch and with which environment, or throw. Starts nothing. */
 export async function planRun(
   args: RunArgs,
   io: { cwd: string; inherited: Record<string, string | undefined>; config?: string },
