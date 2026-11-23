@@ -1707,6 +1707,8 @@ async function cloudTail(parsed: TailArgs, targetUrl: string) {
       ...request,
       format: parsed.format,
       signal: controller.signal,
+      // A Cloud API restart (an install) answers 5xx for ~15 s: keep reconnecting (backoff up to 8 s) until it is back or Ctrl-C.
+      maxFailures: Number.POSITIVE_INFINITY,
       explain: (status, body) => explainTailRefusal(app, status, body),
     });
   } catch (error) {
