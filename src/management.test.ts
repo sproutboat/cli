@@ -63,7 +63,9 @@ test("management commands work without application source or build artifacts", a
       "GET /api/projects/management-test/deployments",
       "GET /api/projects/management-test/deployments/v1",
       "POST /api/projects/management-test/deployments/v1/activate",
+      "GET /v1/config", // `tail` asks which kind of control plane this is (a Cloud has its own routes), then takes the Community ones
       "GET /api/projects/management-test/logs/recent",
+      "GET /v1/config",
       "GET /api/projects/management-test/logs/sprout",
     ]);
   } finally {

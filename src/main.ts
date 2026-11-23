@@ -171,6 +171,13 @@ import { constants as osConstants } from "node:os";
 import { inspectToolchain } from "./toolchain";
 import { isLinuxTarget, parseTarget, TARGET_NAMES, type BuildTarget } from "./targets";
 import { writeDeployFiles } from "./standalone-deploy";
+import {
+  cloudTailRequest,
+  DEFAULT_RECENT_LINES,
+  explainTailRefusal,
+  recentCloudLogs,
+  shortSecretWarnings,
+} from "./cloud-logs";
 import { parseTailArgs, runTail, TAIL_USAGE, tailQuery, type TailArgs } from "./tail";
 import { followLog, LogFilter, readLogStream } from "./tail-log";
 import { EnvFileError, MissingSecretsError } from "./env-file";
@@ -1647,6 +1654,8 @@ async function tail(args: string[]) {
   if ("error" in result) usageError(result.error, TAIL_USAGE);
   const parsed = result.args;
   if (parsed.file !== undefined) return tailLog(parsed, parsed.file);
+  const { apiUrl: targetUrl } = await resolveApiUrl();
+  if ((await deployKind(targetUrl, false)) === "cloud") return guard(() => cloudTail(parsed, targetUrl));
   const [project, { apiUrl, token }] = await Promise.all([readProjectConfig(parsed.dir), apiCredentials()]);
   const base = `${apiUrl}/api/projects/${project.config.name}`;
   if (parsed.recent || parsed.sprout) {
@@ -1671,6 +1680,34 @@ async function tail(args: string[]) {
   } catch (error) {
     fail(error instanceof Error ? error.message : String(error));
   }
+}
+
+/**
+ * `tail` on a Cloud endpoint. Live: the stream from GET /v1/apps/<app>/tail, with the same flags and output as `wrangler tail`; it reconnects when the server ends a
+ * session (10 minutes) and Ctrl-C ends it with exit 0. `--recent` (and its old name `--sprout`): the last lines the app's host holds, oldest first (no times, no levels).
+ */
+async function cloudTail(parsed: TailArgs, targetUrl: string) {
+  const project = parsed.name === undefined ? await readProjectConfig(parsed.dir) : undefined;
+  const app = parsed.name ?? project!.config.name;
+  const credentials = await cloudCredentials(targetUrl, parsed.account ?? project?.account);
+  if (parsed.recent || parsed.sprout) {
+    const recent = await recentCloudLogs(credentials, app, parsed.linesSet ? parsed.lines : DEFAULT_RECENT_LINES);
+    if (parsed.format === "json") console.log(JSON.stringify(recent));
+    else if (recent.lines.length) console.log(recent.lines.join("\n"));
+    else console.error(dim("nothing: the host holds no output for this app"));
+    return;
+  }
+  // Ctrl-C (or a terminated pipe reader) ends the stream and exits 0.
+  const controller = new AbortController();
+  for (const signal of ["SIGINT", "SIGTERM"] as const) process.once(signal, () => controller.abort());
+  process.stdout.on("error", () => controller.abort());
+  const request = cloudTailRequest(credentials, app, tailQuery(parsed));
+  await runTail({
+    ...request,
+    format: parsed.format,
+    signal: controller.signal,
+    explain: (status, body) => explainTailRefusal(app, status, body),
+  });
 }
 
 type DomainView = {
@@ -1884,6 +1921,7 @@ async function bulkSecrets(positional: string[], flags: ReturnType<typeof takeFl
   if ((await deployKind(targetUrl, false)) === "cloud") {
     await guard(async () => {
       const credentials = await cloudCredentials(targetUrl, flags["--account"] ?? project.account);
+      for (const warning of shortSecretWarnings(bulk.set)) console.warn(amber(`! ${warning}`));
       const generation = await patchCloudSecrets(credentials, app, bulk);
       await finishCloudSecretChange({ credentials, app, generation, noDeploy, what: `${summary} on ${app}` });
     });
@@ -1970,6 +2008,7 @@ async function cloudSecrets(
   }
   const value = inlineValue ?? (await Bun.stdin.text()).replace(/\r?\n$/, "");
   if (!value) fail("no value: pipe it on stdin, or pass --value <value>");
+  for (const warning of shortSecretWarnings({ [name!]: value })) console.warn(amber(`! ${warning}`));
   const generation = await putCloudSecret(credentials, app, name!, value);
   await finishCloudSecretChange({ credentials, app, generation, noDeploy, what: `set ${name} on ${app}` });
 }
