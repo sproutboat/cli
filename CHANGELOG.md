@@ -10,11 +10,24 @@ maintained going forward by the `release` skill.
 
 ## Unreleased
 
+## [0.63.0] - 2026-11-23
+
+Runtime and toolchain pins unchanged: `@sproutboat/runtime` ^0.49.2 and `@sproutboat/toolchain` ^0.29.1. This release is the Sproutboat Cloud work of the closed-alpha gate: a certificate wait, `delete`, the app limit and `tail`.
+
+### Added
+
+- **`sproutboat tail` on the Cloud.** It streams the app's live events from `GET /v1/apps/<app>/tail` with the same flags and output as `wrangler tail` (`--format`, `--status`, `--method`, `--sampling-rate`, `--search`, `--outcome`), reconnects when the server ends a session and while the Cloud API restarts (an install answers 5xx for about 15 seconds), and Ctrl-C ends it with exit 0. `--recent [--lines <n>]` prints the last lines the app's host holds, oldest first (up to 1000, default 100; `--sprout` is the old name). `--name <project>` and `--account <team>` work outside the project directory. Refusals say what is wrong (no such app, a key without the scope, a bad `--lines`).
+- **`secrets put` warns on a value shorter than 8 characters.** The secret is still stored; the warning says the app's logs hide a secret only from 8 characters up, so a shorter one shows in `sproutboat tail` and the dashboard if the app prints it (`secrets bulk` warns too).
+
 ### Fixed
 
 - **`deploy` no longer presents a dead address as live on a new team.** A team's first HTTPS certificate (a wildcard for `<team>.sproutboat.app`) takes about two minutes, and until then the printed URL fails the TLS handshake. After the app is applied, `deploy` now reads the certificate state the Cloud reports for the platform name and waits for it (a progress line, up to 3 minutes; `SPROUTBOAT_CERT_WAIT_MS` changes the limit, `0` skips the wait). If it is still pending or failed, it prints `! Created <app>, but its address is not ready yet` with the reason instead of the done line. A Cloud that reports no certificate state is not waited on.
 - **`sproutboat delete` works on the Cloud.** It called a Community route and got 404. On a Cloud it now deletes the app of the project (or `--name`, `--account` picks the team) with `DELETE /v1/apps/<app>`, asks first like `wrangler delete` (default no), and `--force`, `-f`, `--yes` or `-y` skip the question; without a terminal one of them is required. A key with only `app:delete_own` is told what it lacks.
 - **A new app over the team's app limit stops before anything is uploaded.** `deploy` asks `GET /v1/limits` first (`new_app_refusal`) and prints the Cloud's own message, instead of building for 35 seconds and failing at the end. Older Clouds still refuse at the build.
+
+### Changed
+
+- Internal: a comment policy for the source (only what the code cannot say) and a repaired tagged-release runtime-comparison harness. No user-visible change.
 
 ## [0.62.0] - 2026-11-23
 
@@ -1964,7 +1977,8 @@ its own package.
 - Renamed the package to `sproutboat` (was `@sproutboat/cli`); dropped the
   `sprout` bin alias in favour of a user-defined shell alias.
 
-[Unreleased]: https://github.com/sproutboat/cli/compare/v0.61.0...HEAD
+[Unreleased]: https://github.com/sproutboat/cli/compare/v0.63.0...HEAD
+[0.63.0]: https://github.com/sproutboat/cli/compare/v0.62.0...v0.63.0
 [0.61.0]: https://github.com/sproutboat/cli/compare/v0.60.0...v0.61.0
 [0.60.0]: https://github.com/sproutboat/cli/compare/v0.59.1...v0.60.0
 [0.59.1]: https://github.com/sproutboat/cli/compare/v0.59.0...v0.59.1
