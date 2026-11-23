@@ -10,6 +10,14 @@ maintained going forward by the `release` skill.
 
 ## Unreleased
 
+## [0.62.0] - 2026-11-23
+
+New runtime: `@sproutboat/runtime` 0.49.2 (toolchain, wire and assets unchanged, 0.29.1, 0.23.0 and 0.3.2). Sproutboat Cloud's runtime generation is unchanged: 0.49.2 only changes the dev-only broker transport.
+
+### Changed
+
+- **Runtime 0.49.2.** `sproutboat dev` starts an app at `compatibility_date` 2026-11-20 or later again. The prelude asks for the acknowledgement gate from that date and only the embedded transport defined `__sbGateRaw`, so the app died at startup with `ReferenceError: __sbGateRaw is not defined`. The broker transport now defines it with the gate off.
+
 ### Added
 
 - **`process` and `Buffer` for the app's own code from `compatibility_date` 2026-11-23, and `process.env` holds its vars and secrets.** Workers with `nodejs_compat` has a global `process`, and since `nodejs_compat_populate_process_env` (implied at 2025-04-01) its `process.env` is filled from the text bindings. The same now holds here. Before this date only dependency files in `node_modules/` got a `process` and `Buffer`, so a pre-bundled provider output (Alchemy's Effect bundle) that reads `process.platform` while it loads died at init with `Cannot get property of null`. From 2026-11-23 every project JS and TypeScript file that uses them gets the binding, and `process.env` mirrors the string `vars` and the secrets (a secret is still read on first use, and one that is not set reads `undefined`); KV, D1 and other bindings, and non-string values, are not in it, as in Workers. Earlier dates answer as before: dependency files get a `process` with an empty `env`, the handler's own code gets none.
