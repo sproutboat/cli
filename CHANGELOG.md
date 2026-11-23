@@ -10,6 +10,19 @@ maintained going forward by the `release` skill.
 
 ## Unreleased
 
+## [0.61.0] - 2026-11-23
+
+New runtime and toolchain: `@sproutboat/runtime` 0.49.1 and `@sproutboat/toolchain` 0.29.1 (wire and assets unchanged, 0.23.0 and 0.3.2). This is the runtime Sproutboat Cloud has run since 2026-11-23.
+
+### Changed
+
+- **Runtime 0.49.1.** Durable Object RPC reaches the method names an instance answers itself: a class whose constructor returns a Proxy (Alchemy's Durable Object bridge) no longer fails every stub call with "The RPC receiver does not implement the method". `WebSocketPair` is iterable (`const [client, server] = new WebSocketPair()`, as in workerd).
+- **Toolchain 0.29.1 (and 0.29.0).** The patched Porffor refuses its own intrinsics in compiled app code: a compile fails with `SB_INPUT_REFUSED` when a module other than the entry, the runtime or the shared prelude names `Porffor` or an intrinsic (`__Porffor_*`, `__<Builtin>_*`, `__ecma262_*`). The entry is trusted, so a standalone build of your own entry is unchanged. Rolldown's CommonJS interop helpers (`__toESMCache_node`, `__toESMCache_esm`) are not refused.
+
+### Fixed
+
+- **A compiled Alchemy v2 Worker no longer answers every request with 500.** Porffor patch P15 repeats the block function-order pass until it settles, so a function moved up no longer ends up behind a callee declared later (which was never compiled and threw a TypeError with no message).
+
 ## [0.60.0] - 2026-11-22
 
 New runtime and wire: `@sproutboat/runtime` 0.49.0, `@sproutboat/wire` 0.23.0 and `@sproutboat/assets` 0.3.2 (toolchain unchanged, 0.28.0). This is the runtime Sproutboat Cloud has run since 2026-11-22.
@@ -1928,7 +1941,8 @@ its own package.
 - Renamed the package to `sproutboat` (was `@sproutboat/cli`); dropped the
   `sprout` bin alias in favour of a user-defined shell alias.
 
-[Unreleased]: https://github.com/sproutboat/cli/compare/v0.60.0...HEAD
+[Unreleased]: https://github.com/sproutboat/cli/compare/v0.61.0...HEAD
+[0.61.0]: https://github.com/sproutboat/cli/compare/v0.60.0...v0.61.0
 [0.60.0]: https://github.com/sproutboat/cli/compare/v0.59.1...v0.60.0
 [0.59.1]: https://github.com/sproutboat/cli/compare/v0.59.0...v0.59.1
 [0.59.0]: https://github.com/sproutboat/cli/compare/v0.58.1...v0.59.0
