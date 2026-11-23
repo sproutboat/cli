@@ -2447,13 +2447,15 @@ async function deleteProject(args: string[]) {
   for (let index = 0; index < args.length; index += 1) {
     const arg = args[index];
     if (arg === "--yes" || arg === "-y" || arg === "--force" || arg === "-f") confirmed = true;
-    else if (arg === "--name") explicitName = args[(index += 1)];
+    else if (arg === "--name") explicitName = args[(index += 1)] ?? "";
     else if (arg === "--account") account = args[(index += 1)] ?? "";
     else if (arg.startsWith("--name=")) explicitName = arg.slice("--name=".length);
     else if (arg.startsWith("--account=")) account = arg.slice("--account=".length);
     else if (!arg.startsWith("-")) positional.push(arg);
     else usageError(`delete: unknown flag "${arg}"`, DELETE_USAGE);
   }
+  if (explicitName !== undefined && (explicitName === "" || explicitName.startsWith("-")))
+    usageError("delete: --name needs a project name", DELETE_USAGE);
   if (account !== undefined && (account === "" || account.startsWith("-")))
     usageError("delete: --account needs a team name", DELETE_USAGE);
 

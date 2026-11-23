@@ -667,6 +667,10 @@ export function parseSseFrames(buffer: string): SseParse {
  * Returns false when the team has no such app (already gone).
  */
 export async function deleteCloudApp(credentials: CloudCredentials, project: string): Promise<boolean> {
+  if (!CLOUD_PROJECT_RE.test(project))
+    throw new CloudError(
+      `"${project}" is not a valid Cloud app name (3 to 32 characters: lowercase letters, digits, dashes)`,
+    );
   const reply = await makeCall(credentials)({ method: "DELETE", path: `/v1/apps/${project}`, ok: [403, 404] });
   if (reply.status === 404) return false;
   if (reply.status === 403) {

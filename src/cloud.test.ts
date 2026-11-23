@@ -893,6 +893,22 @@ describe("the CLI end to end", () => {
     }
   });
 
+  test("delete refuses a --name with no value and a path-shaped name, without sending a DELETE", async () => {
+    const cloud = startFakeCloud({ appExists: true });
+    try {
+      const env = { SPROUTBOAT_API_URL: cloud.url, SPROUTBOAT_API_TOKEN: FAKE_KEY };
+      const missing = await run(["delete", project, "--force", "--name"], env);
+      expect(missing.code).not.toBe(0);
+      expect(missing.stderr).toContain("--name needs a project name");
+      const traversal = await run(["delete", "--name", "../keys/self", "--force"], env);
+      expect(traversal.code).not.toBe(0);
+      expect(traversal.stderr).toContain("is not a valid Cloud app name");
+      expect(cloud.calls.filter((c) => c.method === "DELETE")).toEqual([]);
+    } finally {
+      cloud.stop();
+    }
+  });
+
   test("deploy dry-run prints the plan and writes nothing", async () => {
     const cloud = startFakeCloud();
     try {
