@@ -37,7 +37,7 @@ const lineEvent = (text: string) => ({
 type Seen = { path: string; query: URLSearchParams; auth: string | null };
 const seen: Seen[] = [];
 let attempts = 0;
-let mode: "ok" | "forbidden" | "viewers" | "missing" = "ok";
+let mode: "ok" | "forbidden" | "viewers" | "missing" | "times" | "stamped" = "ok";
 let server: ReturnType<typeof Bun.serve>;
 let dir: string;
 let projectDir: string;
@@ -65,12 +65,19 @@ beforeAll(async () => {
           { error: "too many live tails", reason: "tail-viewers", scope: "app", retry_after: 30 },
           { status: 429, headers: { "retry-after": "30" } },
         );
-      if (url.pathname === "/v1/apps/blog/logs")
-        return Response.json({
-          project: "blog",
-          lines: ["one", "sproutd: request GET /a 200 ok 1.0ms", "two"],
-          retention: "7 days",
-        });
+      if (url.pathname === "/v1/apps/blog/logs") {
+        const lines = ["one", "sproutd: request GET /a 200 ok 1.0ms", "two"];
+        const retention = "7 days";
+        if (mode === "times")
+          return Response.json({ project: "blog", lines, times: [null, 1795532400123, 1795532461000], retention });
+        if (mode === "stamped")
+          return Response.json({
+            project: "blog",
+            lines: ["@1795532400123 one", "an older line", "@1795532461000 two"],
+            retention,
+          });
+        return Response.json({ project: "blog", lines, retention });
+      }
       if (url.pathname === "/v1/apps/blog/tail") {
         attempts++;
         // The first session ends at the server's time cap; the CLI opens the next one.
@@ -111,6 +118,7 @@ async function run(args: string[], opts: { kill?: boolean } = {}) {
       SPROUTBOAT_API_URL: `http://127.0.0.1:${server.port}`,
       SPROUTBOAT_API_TOKEN: KEY,
       SPROUTBOAT_NO_UPDATE_CHECK: "1",
+      TZ: "UTC",
       XDG_CONFIG_HOME: join(dir, "cfg"),
       HOME: dir,
     },
@@ -181,6 +189,24 @@ test("tail --recent prints the host's lines oldest first; --lines is sent; --spr
     lines: ["one", "sproutd: request GET /a 200 ok 1.0ms", "two"],
     retention: "7 days",
   });
+});
+
+test("tail --recent shows the time of each line where the Cloud sends it, and an unstamped line still prints", async () => {
+  mode = "times";
+  const r = await run(["--name", "blog", "--recent"]);
+  expect(r.code).toBe(0);
+  expect(r.out).toBe(
+    "                        one\n2026-11-24 15:00:00.123 sproutd: request GET /a 200 ok 1.0ms\n2026-11-24 15:01:01.000 two\n",
+  );
+  const json = JSON.parse((await run(["--name", "blog", "--recent", "--format", "json"])).out);
+  expect(json.times).toEqual([null, 1795532400123, 1795532461000]);
+  // lines that carry the host's stamp in their text are read the same way
+  mode = "stamped";
+  const inline = await run(["--name", "blog", "--recent"]);
+  expect(inline.out).toBe(
+    "2026-11-24 15:00:00.123 one\n                        an older line\n2026-11-24 15:01:01.000 two\n",
+  );
+  mode = "ok";
 });
 
 test("refusals are clear and final: 403 names logs:read, 404 says to deploy, 429 says how many viewers; --recent says the same", async () => {
