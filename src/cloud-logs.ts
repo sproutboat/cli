@@ -33,9 +33,26 @@ export function cloudTailRequest(credentials: CloudCredentials, app: string, que
   };
 }
 
-export type RecentLogs = { project: string; lines: string[]; retention: string };
+/** `times`: the time the host stored each line (ms since the epoch, null for a line an older host stored), when the control plane sends them (logs step 2 on). */
+export type RecentLogs = { project: string; lines: string[]; times?: (number | null)[]; retention: string };
 
-/** The last `lines` lines of the app's own output, oldest first, as the host keeps them: no times, no levels. */
+const STAMP = /^@(\d{13}) /;
+
+/** The local time of a stored line, `2026-11-24 16:21:03.448` (the width of every stamp, so lines line up). */
+export function logTime(ms: number): string {
+  const d = new Date(ms);
+  const p = (n: number, width = 2) => String(n).padStart(width, "0");
+  return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())} ${p(d.getHours())}:${p(d.getMinutes())}:${p(d.getSeconds())}.${p(d.getMilliseconds(), 3)}`;
+}
+
+/** The lines as printed: a stamped line starts with its time, an unstamped one (an older host's) keeps its text and is indented to line up, and with no stamp at all nothing changes. */
+export function withTimes(lines: string[], times: (number | null)[] | undefined): string[] {
+  if (!times || !times.some((t) => t !== null)) return lines;
+  const blank = " ".repeat(logTime(0).length);
+  return lines.map((line, i) => (times[i] == null ? `${blank} ${line}` : `${logTime(times[i]!)} ${line}`));
+}
+
+/** The last `lines` lines of the app's own output, oldest first, as the host keeps them: with the time each was stored where the host records it, no levels. */
 export async function recentCloudLogs(credentials: CloudCredentials, app: string, lines: number): Promise<RecentLogs> {
   const result = await makeCall(credentials)({
     method: "GET",
@@ -51,11 +68,22 @@ export async function recentCloudLogs(credentials: CloudCredentials, app: string
     throw new CloudError(`could not read the logs: ${detail}`);
   }
   const raw = result.body?.lines;
-  return {
+  let text = Array.isArray(raw) ? raw.filter(isString) : [];
+  const sent = result.body?.times;
+  let times: (number | null)[] | undefined =
+    Array.isArray(sent) && sent.length === text.length ? sent.map((t) => (isSafeInteger(t) ? t : null)) : undefined;
+  // A control plane that sends the lines with the host's stamp in them (`@<epoch ms> text`) is read the same way.
+  if (!times && text.some((l) => STAMP.test(l))) {
+    times = text.map((l) => (STAMP.test(l) ? Number(l.slice(1, 14)) : null));
+    text = text.map((l) => l.replace(STAMP, ""));
+  }
+  const recent: RecentLogs = {
     project: app,
-    lines: Array.isArray(raw) ? raw.filter(isString) : [],
+    lines: text,
     retention: isString(result.body?.retention) ? result.body.retention : "",
   };
+  if (times) recent.times = times;
+  return recent;
 }
 
 /** The runtime logs hide secret values of this many characters or more; a shorter one would mangle ordinary output, so it is not matched. */

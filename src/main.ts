@@ -177,6 +177,7 @@ import {
   explainTailRefusal,
   recentCloudLogs,
   shortSecretWarnings,
+  withTimes,
 } from "./cloud-logs";
 import { parseTailArgs, runTail, TAIL_USAGE, TailError, tailQuery, type TailArgs } from "./tail";
 import { followLog, LogFilter, readLogStream } from "./tail-log";
@@ -1684,7 +1685,7 @@ async function tail(args: string[]) {
 
 /**
  * `tail` on a Cloud endpoint. Live: the stream from GET /v1/apps/<app>/tail, with the same flags and output as `wrangler tail`; it reconnects when the server ends a
- * session (10 minutes) and Ctrl-C ends it with exit 0. `--recent` (and its old name `--sprout`): the last lines the app's host holds, oldest first (no times, no levels).
+ * session (10 minutes) and Ctrl-C ends it with exit 0. `--recent` (and its old name `--sprout`): the last lines the app's host holds, oldest first, each with its time where the host records one (no levels).
  */
 async function cloudTail(parsed: TailArgs, targetUrl: string) {
   const project = parsed.name === undefined ? await readProjectConfig(parsed.dir) : undefined;
@@ -1693,7 +1694,7 @@ async function cloudTail(parsed: TailArgs, targetUrl: string) {
   if (parsed.recent || parsed.sprout) {
     const recent = await recentCloudLogs(credentials, app, parsed.linesSet ? parsed.lines : DEFAULT_RECENT_LINES);
     if (parsed.format === "json") console.log(JSON.stringify(recent));
-    else if (recent.lines.length) console.log(recent.lines.join("\n"));
+    else if (recent.lines.length) console.log(withTimes(recent.lines, recent.times).join("\n"));
     else console.error(dim("nothing: the host holds no output for this app"));
     return;
   }
