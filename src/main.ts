@@ -47,7 +47,15 @@ import {
   resolveWorkersDev,
   parseProjectConfig,
 } from "./account-field";
-import { LEGACY_FILE, loadProjectText, SETTINGS_FILE } from "./project-config";
+import {
+  dialectOf,
+  findRedirect,
+  LEGACY_FILE,
+  loadProjectText,
+  SETTINGS_FILE,
+  type LoadedProject,
+  type Redirect,
+} from "./project-config";
 import { APP_NAME_MAX, WORKERS_COMPAT_FLOOR } from "./wrangler-config";
 import { DATA_ERROR_STATUSES } from "./data-errors";
 import {
@@ -409,7 +417,26 @@ async function readProjectConfig(directory?: string) {
   }
   const configFile = basename(configPath);
   const env = selectedEnv();
-  const loaded = loadProjectText(configFile, configSource, { directory: projectDirectory, env });
+  let redirect: Redirect | undefined;
+  if (dialectOf(configPath) === "wrangler") {
+    const found = findRedirect(projectDirectory);
+    if (!found.ok) fail(found.error);
+    redirect = found.redirect;
+  }
+  let loaded: LoadedProject;
+  if (redirect === undefined) loaded = loadProjectText(configFile, configSource, { directory: projectDirectory, env });
+  else {
+    const generated = await readFile(redirect.path, "utf8");
+    loaded = loadProjectText(basename(redirect.path), generated, {
+      directory: projectDirectory,
+      env,
+      redirected: { prefix: redirect.prefix },
+    });
+    if (!noticed.has("redirect")) {
+      noticed.add("redirect");
+      console.warn(dim(`using ${redirect.display}, the config your build generated (.wrangler/deploy/config.json)`));
+    }
+  }
   if (!loaded.ok) fail(loaded.errors.join("\n"));
   if (loaded.dialect === "legacy" && globalFlags().env !== undefined && command !== "dev")
     fail(

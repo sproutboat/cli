@@ -175,6 +175,46 @@ describe("the date is Cloudflare's for a Wrangler file", () => {
   });
 });
 
+describe("a project built by a tool that writes .wrangler/deploy/config.json", () => {
+  test("the generated config is the one that deploys: its main and assets are the build output", async () => {
+    const dir = project("vite-like", {
+      "wrangler.jsonc": `{ "name": "demo", "main": "./workers/app.ts", "compatibility_date": "2025-10-08", "assets": { "binding": "ASSETS" } }`,
+    });
+    mkdirSync(join(dir, "dist", "demo"), { recursive: true });
+    mkdirSync(join(dir, "dist", "client"), { recursive: true });
+    writeFileSync(join(dir, "dist", "client", "index.html"), "<h1>hi</h1>\n");
+    writeFileSync(
+      join(dir, "dist", "demo", "index.js"),
+      "export default { async fetch(request, env) { return new Response('built'); } };\n",
+    );
+    writeFileSync(
+      join(dir, "dist", "demo", "wrangler.json"),
+      JSON.stringify({
+        topLevelName: "demo",
+        definedEnvironments: [],
+        configPath: "x",
+        userConfigPath: "y",
+        compatibility_date: "2025-10-08",
+        name: "demo",
+        main: "index.js",
+        assets: { binding: "ASSETS", directory: "../client" },
+        kv_namespaces: [],
+      }),
+    );
+    mkdirSync(join(dir, ".wrangler", "deploy"), { recursive: true });
+    writeFileSync(
+      join(dir, ".wrangler", "deploy", "config.json"),
+      JSON.stringify({ configPath: "../../dist/demo/wrangler.json" }),
+    );
+    const r = await prepare(dir);
+    expect(r.code, r.err).toBe(0);
+    expect(r.err).toContain("using dist/demo/wrangler.json, the config your build generated");
+    expect(r.source).toContain("built");
+    expect(r.spec.bindings.map((b: { name: string }) => b.name)).toEqual(["ASSETS"]);
+    expect(readFileSync(join(dir, "out", "assets", "manifest.json"), "utf8")).toContain("index.html");
+  });
+});
+
 describe("settings, limits and precedence", () => {
   test("sproutboat.settings.jsonc gives the limits to the spec; SPROUTBOAT_LIMITS_* override; the report names the source", async () => {
     const dir = project("limits", {

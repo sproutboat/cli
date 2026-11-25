@@ -263,6 +263,29 @@ describe("environments (Wrangler's rules)", () => {
   });
 });
 
+describe("a config a build tool generated (.wrangler/deploy/config.json)", () => {
+  const generated = `{ "topLevelName": "app", "definedEnvironments": [], "configPath": "/x/wrangler.jsonc", "userConfigPath": "/x/wrangler.jsonc",
+    "compatibility_date": "2025-10-08", "rules": [{ "type": "ESModule", "globs": ["**/*.js", "**/*.mjs"] }], "python_modules": { "exclude": ["**/*.pyc"] },
+    "name": "app", "main": "index.js", "assets": { "binding": "ASSETS", "directory": "../client" }, "kv_namespaces": [], "hyperdrive": [], "cloudchamber": {} }`;
+
+  test("paths are rebased onto the project, the plugin's own fields and Wrangler's defaults are silent", () => {
+    const r = parseWranglerConfig(generated, "wrangler-json", {
+      file: "wrangler.json",
+      redirected: { prefix: "dist/app" },
+    });
+    if (!r.ok) throw new Error(r.errors.join("\n"));
+    expect(r.value.main).toBe("dist/app/index.js");
+    expect(r.value.assets).toMatchObject({ directory: "dist/client", binding: "ASSETS" });
+    expect(r.warnings).toEqual([]);
+  });
+
+  test("read as the user's own file, the generated folder is outside the project; a file that leaves assets.directory to the build says to build first", () => {
+    const r = parseWranglerConfig(generated, "wrangler-json", { file: "wrangler.json" });
+    expect(r.ok).toBe(false);
+    expect(errors(`{ ${base}, "assets": { "binding": "ASSETS" } }`)).toContain("run your build first");
+  });
+});
+
 describe("limits, dev and workers_dev", () => {
   test("limits.cpu_ms, dev.port/ip and workers_dev are read", () => {
     const r = ok(

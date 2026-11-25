@@ -2,7 +2,7 @@ import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { dialectOf, findProjectFile, loadProjectText, readSettings } from "./project-config";
+import { dialectOf, findProjectFile, findRedirect, loadProjectText, readSettings } from "./project-config";
 
 let root: string;
 beforeAll(() => {
@@ -61,6 +61,46 @@ describe("which file is the project", () => {
     expect(dialectOf("notes.txt")).toBe("unknown");
     const refused = loadProjectText("sproutboat.settings.jsonc", "{}", { directory: root });
     expect(refused.ok ? "" : refused.errors[0]).toContain("is not a project file");
+  });
+});
+
+describe("the redirect a build tool writes", () => {
+  test("a pointer to a generated config gives its path and its folder as seen from the project", () => {
+    const dir = join(root, "redirect");
+    put(dir, "wrangler.jsonc");
+    put(join(dir, "dist", "app"), "wrangler.json");
+    put(
+      join(dir, ".wrangler", "deploy"),
+      "config.json",
+      JSON.stringify({ configPath: "../../dist/app/wrangler.json" }),
+    );
+    expect(findRedirect(dir)).toEqual({
+      ok: true,
+      redirect: {
+        path: join(dir, "dist", "app", "wrangler.json"),
+        prefix: "dist/app",
+        display: "dist/app/wrangler.json",
+      },
+    });
+  });
+
+  test("no pointer is no redirect; a pointer to a missing or outside file is an error that says what to do", () => {
+    const none = join(root, "no-redirect");
+    mkdirSync(none);
+    expect(findRedirect(none)).toEqual({ ok: true, redirect: undefined });
+    const gone = join(root, "gone");
+    put(join(gone, ".wrangler", "deploy"), "config.json", JSON.stringify({ configPath: "../../dist/x/wrangler.json" }));
+    const missing = findRedirect(gone);
+    expect(!missing.ok && missing.error).toContain("run your build again");
+    const outside = join(root, "outside");
+    put(outside, "wrangler.jsonc");
+    put(
+      join(outside, ".wrangler", "deploy"),
+      "config.json",
+      JSON.stringify({ configPath: join(root, "redirect", "dist", "app", "wrangler.json") }),
+    );
+    const away = findRedirect(outside);
+    expect(!away.ok && away.error).toContain("outside the project");
   });
 });
 

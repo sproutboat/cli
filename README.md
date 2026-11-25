@@ -309,6 +309,8 @@ team), `name` (the app name, when the Wrangler name is not a valid one: the Clou
 
 `compatibility_date` in a Wrangler file is Cloudflare's: an older (or missing) date runs as 2026-11-22, so handlers always get `(request, env, ctx)` and bindings behave like Workers, and a later date is kept. `deploy` and `check` print the date the build uses. Only the legacy `sproutboat.jsonc` keeps Sproutboat's own dates.
 
+A build tool that generates the config (the Cloudflare Vite plugin writes `.wrangler/deploy/config.json`) is followed: `check` and `deploy` read the generated `wrangler.json` from your build output, so run your build first.
+
 The legacy file, `sproutboat.jsonc` (below), still works and prints a deprecation note.
 
 ### Legacy `sproutboat.jsonc`

@@ -3,7 +3,7 @@
  * team, the app name and the limits live beside the config in `sproutboat.settings.jsonc`, so Wrangler's file stays stock.
  */
 import { existsSync, readFileSync } from "node:fs";
-import { basename, dirname, join, resolve } from "node:path";
+import { basename, dirname, join, relative, resolve, sep } from "node:path";
 import { parse as parseJsonc, type ParseError } from "jsonc-parser";
 import type { SproutboatConfig } from "@sproutboat/config";
 import { parseProjectConfig, configAccount, configMigrationsDir, configWorkersDev } from "./account-field";
@@ -49,6 +49,36 @@ export function dialectOf(configPath: string): "wrangler" | "legacy" | "unknown"
   if (name === LEGACY_FILE) return "legacy";
   if (name === SETTINGS_FILE) return "unknown";
   return wranglerKind(name) === undefined ? "unknown" : "wrangler";
+}
+
+/**
+ * Wrangler's redirected configuration: a build tool (the Cloudflare Vite plugin) writes `.wrangler/deploy/config.json` with the
+ * `configPath` of the config it generated, and that file, not the user's, is what a deploy reads. Its paths are relative to its
+ * own folder, so `prefix` is that folder as seen from the project.
+ */
+export type Redirect = { path: string; prefix: string; display: string };
+export function findRedirect(
+  directory: string,
+): { ok: true; redirect: Redirect | undefined } | { ok: false; error: string } {
+  const pointer = join(directory, ".wrangler", "deploy", "config.json");
+  let raw: JsonValue | undefined;
+  try {
+    raw = parseJsonc(readFileSync(pointer, "utf8"), [], { allowTrailingComma: true });
+  } catch {
+    return { ok: true, redirect: undefined };
+  }
+  const configPath = isRec(raw) ? raw.configPath : undefined;
+  if (!isString(configPath) || configPath === "") return { ok: true, redirect: undefined };
+  const path = resolve(dirname(pointer), configPath);
+  if (!existsSync(path))
+    return {
+      ok: false,
+      error: `.wrangler/deploy/config.json points at ${configPath}, which does not exist: run your build again`,
+    };
+  const prefix = relative(directory, dirname(path)).split(sep).join("/");
+  if (prefix.startsWith(".."))
+    return { ok: false, error: `.wrangler/deploy/config.json points at ${path}, outside the project` };
+  return { ok: true, redirect: { path, prefix, display: relative(directory, path).split(sep).join("/") } };
 }
 
 export type Limits = { memory_mb?: number; wall_ms?: number; storage_mb?: number; cpu_ms?: number };
@@ -199,7 +229,12 @@ export type LoadedProject =
 export function loadProjectText(
   fileName: string,
   text: string,
-  options: { directory: string; env?: string; inherited?: Record<string, string | undefined> },
+  options: {
+    directory: string;
+    env?: string;
+    inherited?: Record<string, string | undefined>;
+    redirected?: { prefix: string };
+  },
 ): LoadedProject {
   const dialect = dialectOf(fileName);
   if (dialect === "unknown")
@@ -239,6 +274,7 @@ export function loadProjectText(
     file: basename(fileName),
     env: options.env,
     name: settings.settings.name,
+    redirected: options.redirected,
   });
   if (!loaded.ok) return loaded;
   const limits: Limits = { ...settings.settings.limits };

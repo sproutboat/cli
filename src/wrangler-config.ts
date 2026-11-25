@@ -4,6 +4,7 @@
  */
 import { parse as parseJsonc, printParseErrorCode, type ParseError } from "jsonc-parser";
 import { parse as parseToml } from "smol-toml";
+import { posix } from "node:path";
 import type { QueueBinding, ResourceRef, SproutboatConfig } from "@sproutboat/config";
 import { isBoolean, isString, jsonObject, type JsonObject, type JsonValue } from "./json";
 
@@ -47,7 +48,15 @@ export type WranglerOptions = {
   env?: string;
   /** The app's name on the Cloud when the file's own name is not one (settings file `name`); replaces `name` after the environment. */
   name?: string;
+  /** The config is the one a build tool generated (`.wrangler/deploy/config.json`): its paths are relative to `prefix`, the folder it sits in, as seen from the project. */
+  redirected?: { prefix: string };
 };
+
+const DEFAULT_RULES = JSON.stringify([{ type: "ESModule", globs: ["**/*.js", "**/*.mjs"] }]);
+const DEFAULT_PYTHON_MODULES = JSON.stringify({ exclude: ["**/*.pyc"] });
+
+/** Fields the Cloudflare Vite plugin adds to the config it generates; they mean nothing here. */
+const GENERATED_FIELDS = new Set(["configPath", "userConfigPath", "topLevelName", "definedEnvironments"]);
 
 // What each of Wrangler 4.161.0's 91 top-level fields does here (ok: acted on; silent: harmless; warn: a product not run).
 // A test fails when a newer Wrangler adds a field that is not classified.
@@ -410,15 +419,23 @@ export function convertWrangler(raw: Rec, options: WranglerOptions = {}): Wrangl
   const extras: WranglerExtras = { migrationsDirs: {} };
   if (envLabel !== undefined) extras.env = envLabel;
 
+  const under = (path: string): string => {
+    const prefix = options.redirected?.prefix;
+    return prefix === undefined || prefix === "" ? path : posix.normalize(posix.join(prefix, path));
+  };
   for (const key of Object.keys(cfg)) {
     const rule = FIELD_TABLE.get(key);
     if (rule === undefined) {
+      if (options.redirected !== undefined && GENERATED_FIELDS.has(key)) continue;
       note(ctx, key, `unknown field "${key}" (ignored)`);
       continue;
     }
     if (rule.kind !== "warn") continue;
     const value = cfg[key];
     if (isEmpty(value) || value === false) continue;
+    // A generated config spells out Wrangler's own defaults; they are not the user's choice.
+    if (key === "rules" && JSON.stringify(value) === DEFAULT_RULES) continue;
+    if (key === "python_modules" && JSON.stringify(value) === DEFAULT_PYTHON_MODULES) continue;
     if (LIST_PRODUCTS.has(key) && Array.isArray(value)) {
       value.forEach((_, index) => note(ctx, `${key}[${index}]`, rule.message));
     } else if (LIST_PRODUCTS.has(key) && isRec(value)) {
@@ -465,11 +482,11 @@ export function convertWrangler(raw: Rec, options: WranglerOptions = {}): Wrangl
     if (!isRec(cfg.assets)) err(ctx, `"assets" should be an object, but got ${q(cfg.assets)}`);
     else {
       const a = cfg.assets;
-      const directory = isStr(a.directory) ? a.directory.replace(/^\.\//, "").replace(/\/+$/, "") : "";
+      const directory = isStr(a.directory) ? under(a.directory.replace(/^\.\//, "").replace(/\/+$/, "")) : "";
       if (a.directory === undefined)
         err(
           ctx,
-          '"assets.directory" is not set: this file leaves it to a build tool (the Cloudflare Vite plugin writes it into the build output and points .wrangler/deploy/config.json at the generated config), which Sproutboat does not follow yet. Set "assets.directory" to your built folder, for example "./dist".',
+          '"assets.directory" is not set: this file leaves it to a build tool (the Cloudflare Vite plugin writes it into the build output and points .wrangler/deploy/config.json at the generated config), so run your build first: the generated config that .wrangler/deploy/config.json points at carries it. Or set "assets.directory" to your built folder, for example "./dist".',
         );
       else if (directory === "" || directory.split("/").includes(".."))
         err(ctx, `"assets.directory" should be a folder inside the project, but got ${q(a.directory)}`);
@@ -521,7 +538,7 @@ export function convertWrangler(raw: Rec, options: WranglerOptions = {}): Wrangl
   let main: string | undefined;
   if (cfg.main !== undefined) {
     if (!isStr(cfg.main) || cfg.main === "") err(ctx, `"main" should be a string, but got ${q(cfg.main)}`);
-    else main = cfg.main.replace(/^\.\//, "");
+    else main = under(cfg.main.replace(/^\.\//, ""));
   } else if (assets !== undefined) {
     main = ASSETS_ONLY_ENTRY;
     // As the legacy config does: a Worker with only assets reaches them through env.ASSETS.
