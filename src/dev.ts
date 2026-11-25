@@ -12,7 +12,8 @@ import { createBroker, listen, listenTransfers, type Bindings, type Broker } fro
 import { jsonObject, parseJsonValue } from "./json";
 import { resolveDevVars } from "./env-file";
 import { amber, dim, leaf, ok } from "./style";
-import type { SproutboatConfig } from "./config";
+import { devAssetResponse } from "./dev-assets";
+import { isBindingName, type SproutboatConfig } from "./config";
 
 const RESTART_DEBOUNCE_MS = 120;
 const DEV_COMPILE_SESSION = randomUUID();
@@ -135,11 +136,14 @@ async function start(input: DevInput, port: number): Promise<Running> {
     ".sproutboat/dev-build",
     `${Date.now()}-${Math.random().toString(16).slice(2)}`,
   );
+  // Every entry of .dev.vars (or the .env files) is bound, declared or not, as Wrangler does; the names are baked into the build.
+  const secrets = await devSecrets(input);
+  const bound = [...new Set([...(input.config.secrets ?? []), ...Object.keys(secrets).filter(isBindingName)])];
   let artifact;
   try {
     artifact = await buildArtifact({
       projectDir: input.projectDir,
-      config: input.config,
+      config: bound.length === (input.config.secrets ?? []).length ? input.config : { ...input.config, secrets: bound },
       sourcePath: input.sourcePath,
       source: input.source,
       target: "host",
@@ -173,7 +177,7 @@ async function start(input: DevInput, port: number): Promise<Running> {
       resourceDir: resolve(stateDir, "resources"),
       token: "sproutboat-dev",
       bindings: await readBindings(artifactDir),
-      secrets: await devSecrets(input),
+      secrets,
       sproutUrl: `http://127.0.0.1:${port}/`,
       assetsDir: existsSync(assetsDir) ? assetsDir : undefined,
       dispatchEnabled: () => dispatchEnabled,
@@ -326,7 +330,12 @@ export async function runDev(input: DevInput): Promise<void> {
           if (server.upgrade(request, { data })) return undefined;
           return new Response("WebSocket upgrade failed", { status: 400 });
         }
-        const directTransfer = /^\/__sb\/r2\/transfer\/[A-Z][A-Z0-9_]*\/[0-9a-f]{24}$/.test(target.pathname);
+        const assetsDir = resolve(running.artifactDir, "assets");
+        if (current.config.assets && existsSync(assetsDir)) {
+          const served = devAssetResponse(request, assetsDir);
+          if (served !== null) return served;
+        }
+        const directTransfer = /^\/__sb\/r2\/transfer\/[A-Za-z_][A-Za-z0-9_]*\/[0-9a-f]{24}$/.test(target.pathname);
         if (directTransfer) server.timeout(request, 255);
         if (directTransfer && !activeTransferPort) return new Response("direct transfers unavailable", { status: 503 });
         target.host = `127.0.0.1:${directTransfer ? activeTransferPort : activePort}`;

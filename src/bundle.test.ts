@@ -120,7 +120,8 @@ test("neutraliseExports handles the bundled re-export shape, aliases included", 
   const bundled = `var src_default = { fetch() {} };\nclass Counter {}\nexport { src_default as default, Counter, Counter as Renamed };`;
   const out = neutraliseExports(bundled);
   expect(out).toContain("const __sbHandlers = src_default;");
-  expect(out).toContain("const Renamed = Counter;");
+  expect(out).toContain('const __sbExports = { "Renamed": Counter };');
+  expect(out).not.toContain("const Renamed");
   expect(out).not.toMatch(/^export\s*\{/m);
 });
 
@@ -400,6 +401,31 @@ test("from the process-global date process.env mirrors the string vars and secre
     // Assigning is allowed, as in Workers, and does not change the bindings.
     out.app.GREETING = "changed";
     expect(env.GREETING).toBe("hello");
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+// Compat sprint wave 1: an Alchemy (Rolldown) bundle is code-split, its entry exports shared helpers under short names, and the chunks import the entry back.
+test("a code-split bundle's own chunks are inlined, a renamed export that collides compiles, and the check passes", async () => {
+  const dir = project({
+    "src/worker.js": [
+      `var D = 1;`,
+      `const __name = (f) => f;`,
+      `class Chat {}`,
+      `async function adapter() { const m = await import("./kysely-adapter-abc.js"); return m.hello(); }`,
+      `var worker = { async fetch() { return new Response(await adapter() + D); } };`,
+      `export { Chat as C, __name as D, Chat, worker as default };`,
+    ].join("\n"),
+    "src/kysely-adapter-abc.js": `import { C } from "./worker.js";\nexport const hello = () => "chunk:" + typeof C;`,
+  });
+  try {
+    const { code } = await bundleHandler(join(dir, "src/worker.js"), dir);
+    expect(code).not.toMatch(/\bimport\s*\(\s*["'`]/);
+    expect(validateHttpSyncSource(code, "2026-11-25")).toEqual({ ok: true });
+    const out = neutraliseExports(code)!;
+    expect(out).not.toMatch(/const D\b/);
+    expect(() => new Function(out)).not.toThrow();
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }

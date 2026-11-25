@@ -94,6 +94,7 @@ describe("arguments and config", () => {
     );
     if (!config.ok) throw new Error("config");
     expect(pickBinding(config.value, "DB")).toEqual({ binding: "DB" });
+    expect(pickBinding(config.value, "main-db", { "main-db": "DB" })).toEqual({ binding: "DB" });
     expect(() => pickBinding(config.value, "NOPE")).toThrow('no D1 binding "NOPE" in the config (it has: DB, LOGS)');
     expect(localDatabasePath("/p", { binding: "DB" })).toBe("/p/.sproutboat/dev/d1/DB.sqlite");
     expect(localDatabasePath("/p", { binding: "LOGS", resourceId: "d1_0123456789abcdef01234567" }, "state")).toBe(

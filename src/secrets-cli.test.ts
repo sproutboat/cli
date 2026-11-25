@@ -1,5 +1,5 @@
 import { afterAll, describe, expect, test } from "bun:test";
-import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { FAKE_KEY, startFakeCloud, type FakeOptions } from "./cloud-fake";
@@ -76,11 +76,11 @@ describe("secret put and delete on the Cloud", () => {
     await withCloud({ declaredSecrets: ["API_KEY"] }, async (cloud, env) => {
       const stray = await cli(project(), ["secrets", "put", "STRAY", "--value", "x", "--no-deploy"], env);
       expect(stray.code).toBe(0);
-      expect(stray.stderr).toContain("! STRAY is stored, but this app does not declare it");
-      expect(stray.stderr).toContain('add "STRAY" to "secrets" in sproutboat.jsonc');
+      expect(stray.stderr).toContain("! STRAY is stored, but the running version does not bind it yet");
+      expect(stray.stderr).toContain("run `sproutboat deploy`");
       expect(cloud.secrets).toEqual({ STRAY: "x" });
       const declared = await cli(project(), ["secrets", "put", "API_KEY", "--value", "y", "--no-deploy"], env);
-      expect(declared.stderr).not.toContain("does not declare");
+      expect(declared.stderr).not.toContain("does not bind");
     });
   });
 
@@ -145,10 +145,10 @@ describe("secret bulk", () => {
   test("bad input is refused before any request, by name", async () => {
     await withCloud({}, async (cloud, env) => {
       const dir = project();
-      writeFileSync(join(dir, "bad.json"), `{ "lower": "v" }`);
+      writeFileSync(join(dir, "bad.json"), `{ "bad-name": "v" }`);
       const run = await cli(dir, ["secrets", "bulk", "bad.json"], env);
       expect(run.code).toBe(1);
-      expect(run.stderr).toContain("not valid: lower");
+      expect(run.stderr).toContain("not valid: bad-name");
       expect((await cli(dir, ["secrets", "bulk", "missing.json"], env)).stderr).toContain(
         "missing.json: cannot read the file",
       );
@@ -263,5 +263,40 @@ describe("global flags and unknown options", () => {
     } finally {
       server.stop(true);
     }
+  });
+});
+
+describe("a deploy binds every stored secret", () => {
+  test("a stored secret the config does not declare is bound, said so, and baked into the unit (Cloudflare binds them all)", async () => {
+    await withCloud({ existingSecrets: { BetterAuthSecret_text: "v", API_KEY: "w" } }, async (_cloud, env) => {
+      const dir = project();
+      writeFileSync(
+        join(dir, "sproutboat.jsonc"),
+        `{ "name": "hello", "main": "src/index.js", "compatibility_date": "2026-11-20", "secrets": ["API_KEY"] }`,
+      );
+      mkdirSync(join(dir, "src"));
+      writeFileSync(
+        join(dir, "src", "index.js"),
+        "export default { fetch(request, env) { return new Response(env.BetterAuthSecret_text); } };\n",
+      );
+      const run = await cli(dir, ["deploy", "--dry-run"], env);
+      expect(run.code).toBe(0);
+      expect(run.stdout).toContain("secrets   BetterAuthSecret_text bound although the config does not declare them");
+      expect(run.stdout).toContain("BetterAuthSecret_text");
+      expect(run.stdout).not.toContain("secrets   API_KEY");
+      expect(run.stdout + run.stderr).not.toMatch(/"v"|=v\b/);
+    });
+  });
+
+  test("a key without secret:list deploys with the declared secrets and says what it could not bind", async () => {
+    await withCloud({ existingSecrets: { STRAY: "x" }, denyPermissions: ["secret:list"] }, async (_cloud, env) => {
+      const dir = project();
+      mkdirSync(join(dir, "src"));
+      writeFileSync(join(dir, "src", "index.js"), "export default { fetch() { return new Response('ok'); } };\n");
+      const run = await cli(dir, ["deploy", "--dry-run"], env);
+      expect(run.code).toBe(0);
+      expect(run.stderr).toContain("lacks secret:list");
+      expect(run.stdout).not.toContain("bound although");
+    });
   });
 });
