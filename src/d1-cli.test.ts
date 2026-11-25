@@ -94,9 +94,7 @@ describe("arguments and config", () => {
     );
     if (!config.ok) throw new Error("config");
     expect(pickBinding(config.value, "DB")).toEqual({ binding: "DB" });
-    expect(() => pickBinding(config.value, "NOPE")).toThrow(
-      'no D1 binding "NOPE" in sproutboat.jsonc (it has: DB, LOGS)',
-    );
+    expect(() => pickBinding(config.value, "NOPE")).toThrow('no D1 binding "NOPE" in the config (it has: DB, LOGS)');
     expect(localDatabasePath("/p", { binding: "DB" })).toBe("/p/.sproutboat/dev/d1/DB.sqlite");
     expect(localDatabasePath("/p", { binding: "LOGS", resourceId: "d1_0123456789abcdef01234567" }, "state")).toBe(
       "/p/state/resources/d1_0123456789abcdef01234567.sqlite",
@@ -168,7 +166,7 @@ describe("local database", () => {
     expect(both.stderr).toContain("either --command or --file");
     const miss = await cli(dir, ["d1", "execute", "OTHER", "--command", "SELECT 1"]);
     expect(miss.code).toBe(1);
-    expect(miss.stderr).toContain('no D1 binding "OTHER" in sproutboat.jsonc (it has: DB)');
+    expect(miss.stderr).toContain('no D1 binding "OTHER" in the config (it has: DB)');
     expect((await cli(dir, ["d1", "execute", "--command", "SELECT 1"])).code).toBe(2);
     expect((await cli(dir, ["d1", "migrations"])).code).toBe(2);
   });

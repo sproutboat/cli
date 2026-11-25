@@ -4,6 +4,7 @@
  * lowercase (`d1_databases: ["DB"]` is `d1/DB`); a queue gets its queue name. The host creates the storage on first use.
  */
 import { existsSync, readFileSync } from "node:fs";
+import { isString } from "./json";
 import { resolve } from "node:path";
 import { queueSettings, resourceRefs, type SproutboatConfig } from "./config";
 import { CloudError } from "./cloud";
@@ -94,6 +95,12 @@ export function mapCloudBindings(config: Mappable, serviceBindings = 0): CloudBi
 
   const queue_consumers: RecordQueueConsumer[] = [];
   const queueNames = new Set<string>();
+  // A Wrangler file consumes only the queues it lists under queues.consumers; the legacy dialect consumes every bound queue.
+  const notConsumed = new Set(
+    (config.queues ?? []).flatMap((entry) =>
+      isString(entry) ? [] : "consume" in entry && entry.consume === false ? [entry.binding] : [],
+    ),
+  );
   for (const queue of queueSettings(config.queues)) {
     const resource = resourceIdFor("queue", queue.queue);
     if (queueNames.has(resource))
@@ -104,6 +111,7 @@ export function mapCloudBindings(config: Mappable, serviceBindings = 0): CloudBi
     const settings: RecordBinding["config"] = { queue: queue.queue };
     if (queue.retryDelay !== undefined) settings.retry_delay = queue.retryDelay;
     bindings.push({ name: queue.binding, kind: "queue", resource_id: resource, config: settings });
+    if (notConsumed.has(queue.binding)) continue;
     queue_consumers.push({
       queue: resource,
       max_batch_size: queue.maxBatchSize ?? QUEUE_DEFAULTS.maxBatchSize,
@@ -132,11 +140,11 @@ export function mapCloudBindings(config: Mappable, serviceBindings = 0): CloudBi
 
   if (bindings.length + serviceBindings > MAX_BINDINGS)
     throw new CloudError(
-      `sproutboat.jsonc declares ${bindings.length + serviceBindings} bindings (secrets, services and assets count); the Cloud takes at most ${MAX_BINDINGS} per app`,
+      `the config declares ${bindings.length + serviceBindings} bindings (secrets, services and assets count); the Cloud takes at most ${MAX_BINDINGS} per app`,
     );
   if (queue_consumers.length > MAX_QUEUE_CONSUMERS)
     throw new CloudError(
-      `sproutboat.jsonc binds ${queue_consumers.length} queues, and each one is consumed by the app; the Cloud takes at most ${MAX_QUEUE_CONSUMERS} queue consumers per app`,
+      `the config binds ${queue_consumers.length} queues, and each one is consumed by the app; the Cloud takes at most ${MAX_QUEUE_CONSUMERS} queue consumers per app`,
     );
   const crons = (config.triggers?.crons ?? []).map(normalizeCron);
   if (crons.length > MAX_CRONS)

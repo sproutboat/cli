@@ -10,6 +10,18 @@ maintained going forward by the `release` skill.
 
 ## Unreleased
 
+### Added
+
+- **`wrangler.jsonc`, `wrangler.json` and `wrangler.toml` are the project file.** A Cloudflare project deploys unchanged: `name`, `main` (any path), `compatibility_date`, `vars` (any JSON value), `kv_namespaces`, `d1_databases` (with per-database `migrations_dir`), `r2_buckets`, `durable_objects` with `migrations`, `queues` as `producers` and `consumers` (a queue is consumed only when listed under `consumers`), `triggers.crons`, `services`, `assets`, `ratelimits`, `secrets.required`, `limits.cpu_ms`, `workers_dev` and `env.<name>`. `--env` and `CLOUDFLARE_ENV` select an environment. Cloudflare products Sproutboat does not run load with one warning each; harmless fields are silent. All 41 files of `cloudflare/templates` are in the tests.
+- **`sproutboat.settings.jsonc`** holds what is Sproutboat's: `account`, `name`, `limits` and an `env` block. `deploy` sends `spec.limits` and prints where each value came from; `SPROUTBOAT_LIMITS_MEMORY_MB`, `SPROUTBOAT_LIMITS_WALL_MS` and `SPROUTBOAT_LIMITS_STORAGE_MB` override it.
+- A compatibility date before 2026-09-28 (most Cloudflare templates carry a 2025 one) warns that handlers get no `env`, and a binding whose date is later than the file's warns that it behaves the older, synchronous way.
+
+### Changed
+
+- **`sproutboat.jsonc` is legacy.** It still works, with a deprecation note on stderr. The project file is the first of `wrangler.json`, `wrangler.jsonc`, `wrangler.toml`, `sproutboat.jsonc` in the directory or the nearest parent. When both a Wrangler file and `sproutboat.jsonc` exist the Wrangler file wins, and `deploy` refuses while the ignored file still carries an `account`, a `migrations_dir` or pinned ids.
+- `--env` is no longer refused for commands that read a project; a legacy file still refuses it.
+- A Wrangler file is never written to: `deploy` pins no ids into it.
+
 ## [0.63.0] - 2026-11-23
 
 Runtime and toolchain pins unchanged: `@sproutboat/runtime` ^0.49.2 and `@sproutboat/toolchain` ^0.29.1. This release is the Sproutboat Cloud work of the closed-alpha gate: a certificate wait, `delete`, the app limit and `tail`.

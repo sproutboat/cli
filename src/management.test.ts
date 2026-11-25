@@ -1,3 +1,4 @@
+import { withoutNotice } from "./test-notice";
 import { expect, test } from "bun:test";
 import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
@@ -52,7 +53,11 @@ test("management commands work without application source or build artifacts", a
           new Response(child.stdout).text(),
           new Response(child.stderr).text(),
         ]);
-        expect({ command: args.join(" "), code, stderr }).toEqual({ command: args.join(" "), code: 0, stderr: "" });
+        expect({ command: args.join(" "), code, stderr: withoutNotice(stderr) }).toEqual({
+          command: args.join(" "),
+          code: 0,
+          stderr: "",
+        });
         expect(stdout.length).toBeGreaterThan(0);
       } finally {
         clearTimeout(timeout);

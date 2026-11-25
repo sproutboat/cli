@@ -5,8 +5,8 @@
  */
 import { existsSync } from "node:fs";
 import { readFile } from "node:fs/promises";
-import { resolve } from "node:path";
-import { parseProjectConfig } from "./account-field";
+import { basename, resolve } from "node:path";
+import { loadProjectText } from "./project-config";
 import { locateProject } from "./global-flags";
 import {
   mergeEntries,
@@ -91,7 +91,7 @@ export async function planRun(
   args: RunArgs,
   io: { cwd: string; inherited: Record<string, string | undefined>; config?: string },
 ): Promise<RunPlan> {
-  let located: { directory: string; configPath: string };
+  let located: ReturnType<typeof locateProject>;
   try {
     located = locateProject(args.dir, io.config, io.cwd);
   } catch (error) {
@@ -101,13 +101,17 @@ export async function planRun(
   let name: string | undefined;
   const declared: string[] = [];
   if (existsSync(configPath)) {
-    const parsed = parseProjectConfig(await readFile(configPath, "utf8"));
+    const parsed = loadProjectText(basename(configPath), await readFile(configPath, "utf8"), {
+      directory,
+      env: io.inherited.CLOUDFLARE_ENV || undefined,
+      inherited: io.inherited,
+    });
     if (!parsed.ok) throw new RunError(parsed.errors.join("\n"));
     name = parsed.value.name;
     declared.push(...(parsed.value.secrets ?? []));
   } else if (args.binary === undefined) {
     throw new RunError(
-      `no ${io.config === undefined ? "sproutboat.jsonc" : "config file"} found in ${io.config === undefined ? directory : configPath}; pass --binary <file> to run a binary without a project`,
+      `no ${io.config === undefined ? "wrangler.jsonc" : "config file"} found in ${io.config === undefined ? directory : configPath}; pass --binary <file> to run a binary without a project`,
     );
   }
   for (const required of args.require) if (!declared.includes(required)) declared.push(required);

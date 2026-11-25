@@ -3,7 +3,8 @@
  * (-c/--config, --cwd, -e/--env, --env-file, --profile, --api-url, -v). A repeated single-value flag takes its last value.
  * Everything after a bare `--` is left alone, and `-h/--help` stays in the arguments: the command decides what to print.
  */
-import { dirname, resolve } from "node:path";
+import { dirname, join, resolve } from "node:path";
+import { findProjectFile, LEGACY_FILE } from "./project-config";
 
 export type GlobalFlags = {
   config?: string;
@@ -76,7 +77,12 @@ export function globalFlags(): GlobalFlags {
   return current;
 }
 
-export type ProjectLocation = { directory: string; configPath: string };
+export type ProjectLocation = {
+  directory: string;
+  configPath: string;
+  /** Other project files in the same directory that lose to `configPath`, in Wrangler order. */
+  shadowed: string[];
+};
 
 export function locateProject(
   positional: string | undefined,
@@ -84,8 +90,12 @@ export function locateProject(
   cwd: string = process.cwd(),
 ): ProjectLocation {
   if (config === undefined) {
-    const directory = resolve(cwd, positional ?? ".");
-    return { directory, configPath: resolve(directory, "sproutboat.jsonc") };
+    const start = resolve(cwd, positional ?? ".");
+    // Wrangler's lookup: the first of wrangler.json, wrangler.jsonc, wrangler.toml, then the legacy sproutboat.jsonc, in this
+    // directory or the nearest parent that has one.
+    const found = findProjectFile(start);
+    if (found) return { directory: found.directory, configPath: found.configPath, shadowed: found.shadowed };
+    return { directory: start, configPath: join(start, LEGACY_FILE), shadowed: [] };
   }
   const configPath = resolve(cwd, config);
   const directory = dirname(configPath);
@@ -93,5 +103,5 @@ export function locateProject(
     throw new Error(
       `--config ${config} is in ${directory}, but the project directory says ${resolve(cwd, positional)}; pass one`,
     );
-  return { directory, configPath };
+  return { directory, configPath, shadowed: [] };
 }

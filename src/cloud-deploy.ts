@@ -117,7 +117,11 @@ export type ServiceRef = { binding: string; service: string };
 type ServiceBindingEntry = { name: string; kind: "service"; resource_id: null; config: Record<string, never> };
 export type ServiceWiring = { bindings: ServiceBindingEntry[]; services: Record<string, string> };
 
+/** The app's limits from the settings file, `SPROUTBOAT_LIMITS_*` and Wrangler's `limits.cpu_ms`; sent only when non-empty. */
+export type SpecLimits = { memory_mb?: number; wall_ms?: number; storage_mb?: number; cpu_ms?: number };
+
 export type SpecExtras = {
+  limits?: SpecLimits;
   services?: ServiceRef[];
   cloudBindings?: CloudBindings;
   compatibilityDate?: string;
@@ -137,7 +141,7 @@ export function checkServiceBindings(project: string, services: ServiceRef[], co
       );
   if (compatibilityDate === undefined || compatibilityDate < SERVICE_BINDINGS_MIN_DATE)
     throw new CloudError(
-      `service bindings between Cloud apps need compatibility_date ${SERVICE_BINDINGS_MIN_DATE} or later (sproutboat.jsonc has ${compatibilityDate ?? "none"}); set compatibility_date to ${SERVICE_BINDINGS_MIN_DATE} or later`,
+      `service bindings between Cloud apps need compatibility_date ${SERVICE_BINDINGS_MIN_DATE} or later (the config has ${compatibilityDate ?? "none"}); set compatibility_date to ${SERVICE_BINDINGS_MIN_DATE} or later`,
     );
 }
 
@@ -171,7 +175,9 @@ function applyExtras(
   wiring: ServiceWiring | undefined,
   secrets: Record<string, string> | undefined,
   mapped: CloudBindings | undefined,
+  limits?: SpecLimits,
 ) {
+  if (limits && Object.keys(limits).length > 0) spec.limits = limits;
   const bindings: (RecordBinding | ServiceBindingEntry)[] = [...(mapped?.bindings ?? []), ...(wiring?.bindings ?? [])];
   if (bindings.length > MAX_BINDINGS)
     throw new CloudError(`the app has ${bindings.length} bindings; the Cloud takes at most ${MAX_BINDINGS}`);
@@ -229,6 +235,7 @@ type SpecAdditions = {
   crons?: string[];
   queue_consumers?: RecordQueueConsumer[];
   secrets_patch?: { set: Record<string, string> };
+  limits?: SpecLimits;
 };
 type HostsPatch = { add?: string[]; remove?: string[] };
 type HostsField = { hosts_patch: HostsPatch } | { hosts: string[] };
@@ -460,7 +467,7 @@ export async function deployToCloud(plan: CloudDeployPlan, io: CloudIo): Promise
   const put = await sendWithHosts(plan, call, plan.hosts, plan.unroute ?? [], liveHosts, io, (hosts) => {
     const spec: AppSpec = { module: { sha256: sha }, ...hosts };
     if (assetsRef !== undefined) spec.assets_manifest_ref = assetsRef;
-    applyExtras(spec, wiring, plan.secrets, plan.cloudBindings);
+    applyExtras(spec, wiring, plan.secrets, plan.cloudBindings, plan.limits);
     return { method: "PUT", path: `/v1/apps/${plan.project}`, json: spec };
   });
   const generation = put.body?.record_generation;
@@ -897,7 +904,7 @@ export async function buildAndDeploy(plan: BuildPlan, io: CloudIo, signal?: Abor
     const spec: BuildSpec = { ...hosts };
     if (assetsRef !== undefined) spec.assets_manifest_ref = assetsRef;
     // The build spec is stored in plaintext by the Cloud: secrets never go in it (they follow the build, below).
-    applyExtras(spec, wiring, undefined, plan.cloudBindings);
+    applyExtras(spec, wiring, undefined, plan.cloudBindings, plan.limits);
     return {
       method: "POST",
       path: `/v1/apps/${plan.project}/builds`,

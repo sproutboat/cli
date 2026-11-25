@@ -127,8 +127,8 @@ export function pickBinding(config: SproutboatConfig, database: string): D1Bindi
   if (found) return found;
   throw new CloudError(
     all.length === 0
-      ? `sproutboat.jsonc has no d1_databases, so there is no database "${database}" (add "d1_databases": ["${database}"])`
-      : `no D1 binding "${database}" in sproutboat.jsonc (it has: ${all.map((entry) => entry.binding).join(", ")})`,
+      ? `the config has no d1_databases, so there is no database "${database}" (add one with "binding": "${database}" to d1_databases)`
+      : `no D1 binding "${database}" in the config (it has: ${all.map((entry) => entry.binding).join(", ")})`,
   );
 }
 
