@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { parseWranglerConfig } from "./wrangler-config";
+import { APP_NAME_MAX, parseWranglerConfig, WORKERS_COMPAT_FLOOR } from "./wrangler-config";
 
 const load = (text: string, kind: "wrangler-jsonc" | "wrangler-toml" = "wrangler-jsonc", env?: string) =>
   parseWranglerConfig(text, kind, { file: kind === "wrangler-toml" ? "wrangler.toml" : "wrangler.jsonc", env });
@@ -48,7 +48,6 @@ describe("the basics", () => {
   });
 
   test("errors name the field, the way Wrangler does, and a missing date says what to add", () => {
-    expect(errors(`{ "name": "app", "main": "x.ts" }`)).toContain("compatibility_date is required; add it to the file");
     expect(errors(`{ ${base}, "kv_namespaces": ["KV"] }`)).toContain(
       '"kv_namespaces" bindings should be objects, but got "KV"',
     );
@@ -57,8 +56,14 @@ describe("the basics", () => {
   });
 
   test("the name must be the Cloud's: long and underscore names say how to keep the file and rename the app", () => {
-    const long = errors(`{ "name": "${"a".repeat(40)}", "main": "x.ts", "compatibility_date": "2026-11-23" }`);
-    expect(long).toContain("3 to 32 characters");
+    expect(
+      ok(`{ "name": "${"a".repeat(APP_NAME_MAX)}", "main": "x.ts", "compatibility_date": "2026-11-23" }`).value.name
+        .length,
+    ).toBe(APP_NAME_MAX);
+    const long = errors(
+      `{ "name": "${"a".repeat(APP_NAME_MAX + 1)}", "main": "x.ts", "compatibility_date": "2026-11-23" }`,
+    );
+    expect(long).toContain(`3 to ${APP_NAME_MAX} characters`);
     expect(long).toContain('set "name" in sproutboat.settings.jsonc');
     expect(errors(`{ "name": "my_app", "main": "x.ts", "compatibility_date": "2026-11-23" }`)).toContain(
       "not an app name",
@@ -104,16 +109,20 @@ describe("what Sproutboat does not run says so, once", () => {
     ]);
   });
 
-  test("an old date warns once: handlers had no env before 2026-09-28, and bindings were synchronous before their dates", () => {
-    const old = ok(`{ "name": "app", "main": "x.ts", "compatibility_date": "2025-10-08" }`);
-    expect(old.warnings.length).toBe(1);
-    expect(old.warnings[0]).toContain("before 2026-09-28");
-    const sync = ok(
-      `{ "name": "app", "main": "x.ts", "compatibility_date": "2026-10-01", "d1_databases": [{ "binding": "DB" }], "kv_namespaces": [{ "binding": "KV" }] }`,
+  test("the date is Cloudflare's: an older or missing date runs as the floor, a later one is kept, and nothing warns", () => {
+    const old = ok(
+      `{ "name": "app", "main": "x.ts", "compatibility_date": "2025-10-08", "d1_databases": [{ "binding": "DB" }] }`,
     );
-    expect(sync.warnings.join("\n")).toContain("before 2026-10-24: d1_databases");
-    expect(sync.warnings.join("\n")).toContain("before 2026-10-25: kv_namespaces");
-    expect(ok(`{ ${base}, "d1_databases": [{ "binding": "DB" }] }`).warnings).toEqual([]);
+    expect(old.value.compatibility_date).toBe(WORKERS_COMPAT_FLOOR);
+    expect(old.extras.declaredDate).toBe("2025-10-08");
+    expect(old.warnings).toEqual([]);
+    const later = ok(`{ "name": "app", "main": "x.ts", "compatibility_date": "2027-03-01" }`);
+    expect(later.value.compatibility_date).toBe("2027-03-01");
+    expect(later.extras.declaredDate).toBeUndefined();
+    const missing = ok(`{ "name": "app", "main": "x.ts" }`);
+    expect(missing.value.compatibility_date).toBe(WORKERS_COMPAT_FLOOR);
+    expect(missing.warnings.join("\n")).toContain(`not set: using ${WORKERS_COMPAT_FLOOR}`);
+    expect(errors(`{ "name": "app", "main": "x.ts", "compatibility_date": "yesterday" }`)).toContain("YYYY-MM-DD");
   });
 });
 
@@ -244,10 +253,10 @@ describe("environments (Wrangler's rules)", () => {
     expect(ok(`{ ${base} }`, "nope").warnings.join("\n")).toContain("no environments are defined");
   });
 
-  test("the suffix counts against the Cloud's 32 characters", () => {
+  test("the suffix counts against the Cloud's limit", () => {
     expect(
       errors(
-        `{ "name": "${"a".repeat(28)}", "main": "x.ts", "compatibility_date": "2026-11-23", "env": { "staging": {} } }`,
+        `{ "name": "${"a".repeat(APP_NAME_MAX - 4)}", "main": "x.ts", "compatibility_date": "2026-11-23", "env": { "staging": {} } }`,
         "staging",
       ),
     ).toContain('the "-staging" suffix counts');

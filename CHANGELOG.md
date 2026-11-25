@@ -14,7 +14,8 @@ maintained going forward by the `release` skill.
 
 - **`wrangler.jsonc`, `wrangler.json` and `wrangler.toml` are the project file.** A Cloudflare project deploys unchanged: `name`, `main` (any path), `compatibility_date`, `vars` (any JSON value), `kv_namespaces`, `d1_databases` (with per-database `migrations_dir`), `r2_buckets`, `durable_objects` with `migrations`, `queues` as `producers` and `consumers` (a queue is consumed only when listed under `consumers`), `triggers.crons`, `services`, `assets`, `ratelimits`, `secrets.required`, `limits.cpu_ms`, `workers_dev` and `env.<name>`. `--env` and `CLOUDFLARE_ENV` select an environment. Cloudflare products Sproutboat does not run load with one warning each; harmless fields are silent. All 41 files of `cloudflare/templates` are in the tests.
 - **`sproutboat.settings.jsonc`** holds what is Sproutboat's: `account`, `name`, `limits` and an `env` block. `deploy` sends `spec.limits` and prints where each value came from; `SPROUTBOAT_LIMITS_MEMORY_MB`, `SPROUTBOAT_LIMITS_WALL_MS` and `SPROUTBOAT_LIMITS_STORAGE_MB` override it.
-- A compatibility date before 2026-09-28 (most Cloudflare templates carry a 2025 one) warns that handlers get no `env`, and a binding whose date is later than the file's warns that it behaves the older, synchronous way.
+- **A Wrangler file's `compatibility_date` is Cloudflare's.** An older or missing date runs as 2026-11-22, so a template with a 2025 date gets `(request, env, ctx)` handlers and Promise-returning bindings like on Workers; a later date is kept, and `check` and `deploy` say which date the build uses. The legacy `sproutboat.jsonc` keeps Sproutboat's own dates.
+- **App names up to 51 characters** (was 32) for Wrangler files and the Cloud: the daemon takes app ids of 64 characters, and an id is the name, `_` and 12 hex digits. Needs a Cloud and hosts that accept the longer name.
 
 ### Changed
 

@@ -6,6 +6,7 @@ import { createHash } from "node:crypto";
 import { existsSync, readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { brotliCompressSync, constants as zlibConstants, gzipSync } from "node:zlib";
+import { APP_NAME_MAX } from "./wrangler-config";
 import { readAssetRules, walkAssets, type AssetEntry, type AssetManifest } from "./assets";
 import type { SproutboatConfig } from "./config";
 import { MAX_BINDINGS, type CloudBindings, type RecordBinding, type RecordQueueConsumer } from "./cloud-bindings";
@@ -13,7 +14,7 @@ import { authHeaders, CloudError, explainApiFailure, parseBody, type CloudIo } f
 import { isSafeInteger, isString, jsonObject, type JsonObject, type JsonValue } from "./json";
 import { dim, ok } from "./style";
 
-export const CLOUD_PROJECT_RE = /^[a-z0-9]([a-z0-9-]{1,30}[a-z0-9])?$/;
+export const CLOUD_PROJECT_RE = new RegExp(`^[a-z0-9]([a-z0-9-]{1,${APP_NAME_MAX - 2}}[a-z0-9])?$`);
 
 /** Compiler progress lines ("parsed", "generated IR", "[12.3ms] optimized") say how far it got, not why it stopped. */
 const PROGRESS =
@@ -704,7 +705,7 @@ export function parseSseFrames(buffer: string): SseParse {
 export async function deleteCloudApp(credentials: CloudCredentials, project: string): Promise<boolean> {
   if (!CLOUD_PROJECT_RE.test(project))
     throw new CloudError(
-      `"${project}" is not a valid Cloud app name (3 to 32 characters: lowercase letters, digits, dashes)`,
+      `"${project}" is not a valid Cloud app name (3 to ${APP_NAME_MAX} characters: lowercase letters, digits, dashes)`,
     );
   const reply = await makeCall(credentials)({ method: "DELETE", path: `/v1/apps/${project}`, ok: [403, 404] });
   if (reply.status === 404) return false;

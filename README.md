@@ -303,12 +303,11 @@ be missing; fields that mean nothing here (`observability`, `upload_source_maps`
 bindings are ignored: every app's storage is its own, named after the binding.
 
 What is Sproutboat's own goes in `sproutboat.settings.jsonc` beside the file, so the Wrangler file stays stock: `account` (the
-team), `name` (the app name, when the Wrangler name is not a valid one: the Cloud takes 3 to 32 characters), `limits`
+team), `name` (the app name, when the Wrangler name is not a valid one: the Cloud takes 3 to 51 characters of `a-z`, `0-9` and `-`), `limits`
 (`memory_mb`, `wall_ms`, `storage_mb`; `cpu_ms` is Wrangler's own `limits.cpu_ms`) and an optional `env.<name>` block.
 `SPROUTBOAT_LIMITS_MEMORY_MB`, `SPROUTBOAT_LIMITS_WALL_MS` and `SPROUTBOAT_LIMITS_STORAGE_MB` override the file.
 
-Cloudflare's older dates need care: before `compatibility_date` 2026-09-28 a handler is called as `fetch(request, ctx)` with no
-`env`, so a template that carries a 2025 date warns and needs a newer date.
+`compatibility_date` in a Wrangler file is Cloudflare's: an older (or missing) date runs as 2026-11-22, so handlers always get `(request, env, ctx)` and bindings behave like Workers, and a later date is kept. `deploy` and `check` print the date the build uses. Only the legacy `sproutboat.jsonc` keeps Sproutboat's own dates.
 
 The legacy file, `sproutboat.jsonc` (below), still works and prints a deprecation note.
 

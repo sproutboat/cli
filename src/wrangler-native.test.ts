@@ -6,6 +6,7 @@ import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { WORKERS_COMPAT_FLOOR } from "./wrangler-config";
 
 const MAIN = join(import.meta.dir, "main.ts");
 
@@ -134,6 +135,43 @@ describe("wrangler.jsonc as the project", () => {
     const r = await prepare(dir);
     expect(r.code, r.err).toBe(0);
     expect(r.source).toContain('"limit":5');
+  });
+});
+
+describe("the date is Cloudflare's for a Wrangler file", () => {
+  const OLD =
+    '"name": "demo", "main": "src/index.js", "compatibility_date": "2025-10-08", "vars": { "GREETING": "hi" }';
+  test("an old date builds as the floor, prints no warning, and says so in check; the legacy file keeps its own date", async () => {
+    const native = project("old-native", { "wrangler.jsonc": `{ ${OLD} }` });
+    const legacy = project("old-legacy", { "sproutboat.jsonc": `{ ${OLD} }` });
+    const a = await prepare(native);
+    const b = await prepare(legacy);
+    expect(a.code, a.err).toBe(0);
+    expect(b.code, b.err).toBe(0);
+    expect(a.spec.compatibility_date).toBe(WORKERS_COMPAT_FLOOR);
+    expect(b.spec.compatibility_date).toBe("2025-10-08");
+    expect(a.source).toContain(WORKERS_COMPAT_FLOOR);
+    expect(a.source).not.toContain("2025-10-08");
+    expect(b.source).toContain("2025-10-08");
+    expect(a.err).not.toContain("compatibility_date");
+    const check = await run(["check"], {}, native);
+    expect(check.out).toContain(`compat    2025-10-08 is Cloudflare's date: the build uses ${WORKERS_COMPAT_FLOOR}`);
+  });
+
+  test("a missing date uses the floor with one warning; a 51-character name is an app, a 52-character one is refused", async () => {
+    const dir = project("no-date", {
+      "wrangler.jsonc": `{ "name": "${"a".repeat(51)}", "main": "src/index.js", "vars": { "GREETING": "hi" } }`,
+    });
+    const r = await prepare(dir);
+    expect(r.code, r.err).toBe(0);
+    expect(r.err).toContain(`not set: using ${WORKERS_COMPAT_FLOOR}`);
+    expect(JSON.parse(readFileSync(join(dir, "out", "build.json"), "utf8")).name).toBe("a".repeat(51));
+    const long = project("too-long", {
+      "wrangler.jsonc": `{ "name": "${"a".repeat(52)}", "main": "src/index.js", "compatibility_date": "2026-11-23" }`,
+    });
+    const refused = await run(["check"], {}, long);
+    expect(refused.code).toBe(1);
+    expect(refused.err).toContain("3 to 51 characters");
   });
 });
 

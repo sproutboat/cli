@@ -128,7 +128,7 @@ describe("one loader for both dialects", () => {
     put(dir, "sproutboat.settings.jsonc", `{ "account": "acme", "name": "tidy", "limits": { "storage_mb": 10 } }`);
     const r = loadProjectText(
       "wrangler.jsonc",
-      `{ "name": "a-very-long-name-that-the-cloud-would-not-take-at-all", "main": "x.ts", "compatibility_date": "2026-11-23", "limits": { "cpu_ms": 100 }, "workers_dev": false }`,
+      `{ "name": "aaaaa-name-longer-than-the-cloud-takes-xxxxxxxxxxxxxxxxxxxxxxxxxxxxxx", "main": "x.ts", "compatibility_date": "2026-11-23", "limits": { "cpu_ms": 100 }, "workers_dev": false }`,
       { directory: dir, inherited: {} },
     );
     if (!r.ok) throw new Error(r.errors.join("\n"));

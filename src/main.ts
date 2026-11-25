@@ -48,6 +48,7 @@ import {
   parseProjectConfig,
 } from "./account-field";
 import { LEGACY_FILE, loadProjectText, SETTINGS_FILE } from "./project-config";
+import { APP_NAME_MAX, WORKERS_COMPAT_FLOOR } from "./wrangler-config";
 import { DATA_ERROR_STATUSES } from "./data-errors";
 import {
   cloudLogout,
@@ -372,6 +373,15 @@ function locate(directory?: string) {
 
 const noticed = new Set<string>();
 
+/** A Wrangler file's older date is Cloudflare's, not Sproutboat's: the build runs it as the floor, and the report says so. */
+function describeDate(declared: string | undefined): string[] {
+  return declared === undefined
+    ? []
+    : [
+        `compat    ${declared} is Cloudflare's date: the build uses ${WORKERS_COMPAT_FLOOR}, so handlers get (request, env, ctx) as on Workers`,
+      ];
+}
+
 /** The limits a deploy sends and where each came from: the file is committed and the overrides are not, so say which won. */
 function describeLimits(limits: Record<string, number | undefined>, sources: Record<string, string>): string[] {
   const entries = Object.entries(limits).filter(([, value]) => value !== undefined);
@@ -434,6 +444,7 @@ async function readProjectConfig(directory?: string) {
     limitSources: loaded.limitSources,
     dev: loaded.dev,
     env,
+    declaredDate: loaded.declaredDate,
     ignoredLegacy: settings,
   };
 }
@@ -523,6 +534,7 @@ async function init(args: string[]) {
 async function check(directory?: string) {
   const project = await readProject(directory);
   console.log(ok(`check passed — ${project.config.name} (${entryLabel(project.config)}, native-fetch)`));
+  for (const line of describeDate(project.declaredDate)) console.log(dim(line));
 }
 
 async function types(args: string[]) {
@@ -1275,7 +1287,9 @@ async function prepareOut(args: string[], outDir: string) {
   const cfg = project.config;
   const name = cfg.name;
   if (!CLOUD_PROJECT_RE.test(name))
-    fail(`"${name}" is not a valid Cloud app name (3 to 32 characters: lowercase letters, digits, dashes)`);
+    fail(
+      `"${name}" is not a valid Cloud app name (3 to ${APP_NAME_MAX} characters: lowercase letters, digits, dashes)`,
+    );
   const services = cfg.services ?? [];
   guardSync(() => checkServiceBindings(name, services, cfg.compatibility_date));
   let cloudBindings!: CloudBindings;
@@ -1312,7 +1326,9 @@ async function deployCloud(args: string[], apiUrl: string, flags: ReturnType<typ
   const project = await readProjectConfig(directory);
   const name = project.config.name;
   if (!CLOUD_PROJECT_RE.test(name))
-    fail(`"${name}" is not a valid Cloud app name (3 to 32 characters: lowercase letters, digits, dashes)`);
+    fail(
+      `"${name}" is not a valid Cloud app name (3 to ${APP_NAME_MAX} characters: lowercase letters, digits, dashes)`,
+    );
 
   const account = flags["--account"] ?? project.account;
   let session: Awaited<ReturnType<typeof resolveSession>> | undefined;
@@ -1391,6 +1407,7 @@ async function deployCloud(args: string[], apiUrl: string, flags: ReturnType<typ
   console.log(`team      ${team}${session ? "" : dim("  (not resolved)")}`);
   console.log(`endpoint  ${apiUrl}`);
   console.log(`route     ${describePlatformName(workersDev, project.configFile, platformName)}`);
+  for (const line of describeDate(project.declaredDate)) console.log(line);
   for (const line of describeLimits(project.limits, project.limitSources)) console.log(line);
   if (assets)
     console.log(

@@ -10,6 +10,12 @@ import { isBoolean, isString, jsonObject, type JsonObject, type JsonValue } from
 export type WranglerKind = "wrangler-json" | "wrangler-jsonc" | "wrangler-toml";
 
 /** The entry of a Worker that has `assets` and no `main`; the CLI writes the file that answers every miss. */
+/** From this date Sproutboat behaves like Workers in every way a Cloudflare file can rely on: the handler signature, Promise-returning bindings, Durable Object RPC, queues, service bindings. */
+export const WORKERS_COMPAT_FLOOR = "2026-11-22";
+
+/** The longest app name: the daemon takes app ids of 64 characters, and an id is the name, "_" and 12 hex digits. */
+export const APP_NAME_MAX = 51;
+
 export const ASSETS_ONLY_ENTRY = "src/.assets-only.js";
 
 type Json = JsonValue;
@@ -24,6 +30,8 @@ export type WranglerExtras = {
   migrationsDirs: Record<string, string>;
   /** `dev.port` and `dev.ip`, the defaults of `sproutboat dev`. */
   dev?: { port?: number; ip?: string };
+  /** The file's own `compatibility_date` when it was older than the floor and so not the one the build uses. */
+  declaredDate?: string;
   /** The environment that was selected, if any. */
   env?: string;
 };
@@ -245,7 +253,7 @@ const QUIET_FLAGS = new Set([
   "no_nodejs_compat_v2",
 ]);
 
-const PROJECT_RE = /^[a-z0-9](?:[a-z0-9-]{1,30}[a-z0-9])?$/;
+export const PROJECT_RE = new RegExp(`^[a-z0-9](?:[a-z0-9-]{1,${APP_NAME_MAX - 2}}[a-z0-9])?$`);
 const BINDING_RE = /^[A-Za-z_][A-Za-z0-9_]*$/;
 const CLASS_RE = /^[A-Za-z_$][A-Za-z0-9_$]*$/;
 const QUEUE_RE = /^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$/;
@@ -425,20 +433,22 @@ export function convertWrangler(raw: Rec, options: WranglerOptions = {}): Wrangl
   else if (!PROJECT_RE.test(cfg.name))
     err(
       ctx,
-      `name ${q(cfg.name)} is not an app name here: the Cloud takes 3 to 32 characters, lowercase letters, digits and "-" (Wrangler allows more, such as "_" and longer names${envLabel ? `; the "-${envLabel}" suffix counts` : ""}). Keep the file as it is and set "name" in sproutboat.settings.jsonc to the app name you want on Sproutboat.`,
+      `name ${q(cfg.name)} is not an app name here: the Cloud takes 3 to ${APP_NAME_MAX} characters, lowercase letters, digits and "-" (Wrangler allows more, such as "_" and 63 characters${envLabel ? `; the "-${envLabel}" suffix counts` : ""}). Keep the file as it is and set "name" in sproutboat.settings.jsonc to the app name you want on Sproutboat.`,
     );
   else name = cfg.name;
 
-  // compatibility_date
+  // compatibility_date: Cloudflare's date, not Sproutboat's. A Wrangler file always runs with Workers-compatible behaviour
+  // (handlers get (request, env, ctx)), so an older or missing date is raised to the floor; a later date is kept.
   let compatibility_date: string | undefined;
-  if (!isStr(cfg.compatibility_date) || !/^\d{4}-\d{2}-\d{2}$/.test(cfg.compatibility_date))
-    err(
-      ctx,
-      cfg.compatibility_date === undefined
-        ? 'compatibility_date is required; add it to the file, for example "compatibility_date": "2026-11-18"'
-        : `compatibility_date must use YYYY-MM-DD, but got ${q(cfg.compatibility_date)}`,
-    );
-  else compatibility_date = cfg.compatibility_date;
+  if (cfg.compatibility_date === undefined) {
+    compatibility_date = WORKERS_COMPAT_FLOOR;
+    note(ctx, "compatibility_date", `not set: using ${WORKERS_COMPAT_FLOOR} (Wrangler also picks a date for you)`);
+  } else if (!isStr(cfg.compatibility_date) || !/^\d{4}-\d{2}-\d{2}$/.test(cfg.compatibility_date))
+    err(ctx, `compatibility_date must use YYYY-MM-DD, but got ${q(cfg.compatibility_date)}`);
+  else {
+    compatibility_date = cfg.compatibility_date < WORKERS_COMPAT_FLOOR ? WORKERS_COMPAT_FLOOR : cfg.compatibility_date;
+    if (compatibility_date !== cfg.compatibility_date) extras.declaredDate = cfg.compatibility_date;
+  }
 
   // compatibility_flags
   if (cfg.compatibility_flags !== undefined) {
@@ -716,7 +726,7 @@ export function convertWrangler(raw: Rec, options: WranglerOptions = {}): Wrangl
       if (!isStr(entry.service) || !PROJECT_RE.test(entry.service)) {
         err(
           ctx,
-          `services "${binding}" needs a "service" that names an app (3 to 32 characters: lowercase letters, digits, "-"), but got ${q(entry.service)}`,
+          `services "${binding}" needs a "service" that names an app (3 to ${APP_NAME_MAX} characters: lowercase letters, digits, "-"), but got ${q(entry.service)}`,
         );
         continue;
       }
@@ -840,9 +850,6 @@ export function convertWrangler(raw: Rec, options: WranglerOptions = {}): Wrangl
     lowered.set(key, store);
   }
 
-  // Sproutboat's runtime is pinned by this date, and Cloudflare's own files carry older ones (2025 for most templates).
-  if (compatibility_date !== undefined) warnOldDate(ctx, compatibility_date, (field) => cfg[field] !== undefined);
-
   if (ctx.errors.length > 0 || name === undefined || main === undefined || compatibility_date === undefined)
     return { ok: false, errors: ctx.errors.length > 0 ? ctx.errors : [`${file}: could not be read`] };
 
@@ -862,31 +869,6 @@ export function convertWrangler(raw: Rec, options: WranglerOptions = {}): Wrangl
   if (assets !== undefined) value.assets = assets;
   if (version_metadata !== undefined) value.version_metadata = version_metadata;
   return { ok: true, value, warnings: [...ctx.warnings], extras };
-}
-
-/** The dates from which Sproutboat behaves like Workers, per feature (docs: Compatibility dates). */
-const DATE_GATES: Array<[field: string, date: string, what: string]> = [
-  ["kv_namespaces", "2026-10-25", "calls return Promises"],
-  ["d1_databases", "2026-10-24", "calls return Promises"],
-  ["r2_buckets", "2026-10-26", "calls return Promises"],
-  ["queues", "2026-10-31", "delivery, retries and acks follow Cloudflare Queues"],
-  ["durable_objects", "2026-10-29", "a class that extends DurableObject is called over RPC"],
-];
-
-function warnOldDate(ctx: Ctx, date: string, uses: (field: string) => boolean): void {
-  if (date < "2026-09-28")
-    note(
-      ctx,
-      "compatibility_date",
-      `${q(date)} is before 2026-09-28, when handlers started to receive (request, env, ctx) as on Workers: older dates call fetch(request, ctx) with no env, so a Worker written for Cloudflare sees env as undefined. Set compatibility_date to 2026-11-18 or later (Sproutboat's dates start in 2026; Cloudflare accepts any later date too)`,
-    );
-  const older = DATE_GATES.filter(([field, gate]) => uses(field) && date < gate && date >= "2026-09-28");
-  for (const [field, gate, what] of older)
-    note(
-      ctx,
-      "compatibility_date",
-      `${q(date)} is before ${gate}: ${field} behaves the older, synchronous way until then (${what} from ${gate}). Set compatibility_date to ${gate} or later`,
-    );
 }
 
 function applyConsumer(ctx: Ctx, entry: QueueBinding, consumer: Rec): void {

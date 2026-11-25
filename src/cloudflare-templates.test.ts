@@ -6,7 +6,7 @@ import { expect, test } from "bun:test";
 import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { basename, join } from "node:path";
 import { jsonObject, parseJsonValue } from "./json";
-import { FIELD_TABLE, parseWranglerConfig, wranglerKind } from "./wrangler-config";
+import { APP_NAME_MAX, WORKERS_COMPAT_FLOOR, FIELD_TABLE, parseWranglerConfig, wranglerKind } from "./wrangler-config";
 
 const root = join(import.meta.dir, "..", "test", "fixtures", "cloudflare-templates");
 const files = readdirSync(root, { withFileTypes: true })
@@ -29,11 +29,11 @@ test("the vendored set holds all 41 files", () => {
   expect(files.length).toBe(41);
 });
 
-test("every Cloudflare template loads, with the app name the settings file would give (3 of 41 need their build tool's assets folder first)", () => {
+test("every Cloudflare template loads, by their own name and date (3 of 41 need their build tool's assets folder first)", () => {
   const refused: string[] = [];
   for (const file of files) {
     const text = readFileSync(join(root, file), "utf8");
-    const loaded = parseWranglerConfig(text, wranglerKind(file)!, { file: basename(file), name: "app-name" });
+    const loaded = parseWranglerConfig(text, wranglerKind(file)!, { file: basename(file) });
     if (!loaded.ok) {
       refused.push(file);
       expect(loaded.errors.join("\n"), file).toContain("assets.directory");
@@ -42,14 +42,17 @@ test("every Cloudflare template loads, with the app name the settings file would
   expect(refused).toEqual(BUILD_TOOL_ASSETS);
 });
 
-test("the names Cloudflare ships that are not 3 to 32 characters fail with the Cloud's rule and the way out", () => {
-  const long = files.filter((file) => {
+test("the longest name Cloudflare ships (37 characters) fits, and every file's date runs as the floor or later", () => {
+  let longest = 0;
+  for (const file of files) {
     const loaded = parseWranglerConfig(readFileSync(join(root, file), "utf8"), wranglerKind(file)!, { file });
-    return !loaded.ok && loaded.errors.some((error) => error.includes("not an app name here"));
-  });
-  expect(long.length).toBe(5);
-  const first = parseWranglerConfig(readFileSync(join(root, long[0]!), "utf8"), wranglerKind(long[0]!)!, {});
-  expect(first.ok ? "" : first.errors.join("\n")).toContain('set "name" in sproutboat.settings.jsonc');
+    if (!loaded.ok) continue;
+    longest = Math.max(longest, loaded.value.name.length);
+    expect(loaded.value.compatibility_date >= WORKERS_COMPAT_FLOOR, file).toBe(true);
+    expect(loaded.warnings.join("\n"), file).not.toContain("compatibility_date");
+  }
+  expect(longest).toBeGreaterThan(32);
+  expect(longest).toBeLessThanOrEqual(APP_NAME_MAX);
 });
 
 test("warnings: the products Sproutboat does not run say so, and the fields every file carries stay silent", () => {
@@ -57,7 +60,6 @@ test("warnings: the products Sproutboat does not run say so, and the fields ever
   for (const file of files) {
     const loaded = parseWranglerConfig(readFileSync(join(root, file), "utf8"), wranglerKind(file)!, {
       file: basename(file),
-      name: "app-name",
     });
     if (loaded.ok)
       for (const warning of loaded.warnings)
@@ -67,14 +69,7 @@ test("warnings: the products Sproutboat does not run say so, and the fields ever
   for (const silent of ["observability", "upload_source_maps", "placement", "workers_dev"])
     expect(Object.keys(seen)).not.toContain(silent);
   expect(Object.keys(seen)).toEqual(
-    expect.arrayContaining([
-      "ai",
-      "hyperdrive",
-      "containers",
-      "dispatch_namespaces",
-      "workflows",
-      "compatibility_date",
-    ]),
+    expect.arrayContaining(["ai", "hyperdrive", "containers", "dispatch_namespaces", "workflows"]),
   );
   expect(seen.ai!.length).toBe(7);
 });

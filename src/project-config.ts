@@ -8,7 +8,13 @@ import { parse as parseJsonc, type ParseError } from "jsonc-parser";
 import type { SproutboatConfig } from "@sproutboat/config";
 import { parseProjectConfig, configAccount, configMigrationsDir, configWorkersDev } from "./account-field";
 import { isString, jsonObject, type JsonObject, type JsonValue } from "./json";
-import { parseWranglerConfig, wranglerKind, type WranglerExtras } from "./wrangler-config";
+import {
+  APP_NAME_MAX,
+  parseWranglerConfig,
+  PROJECT_RE as PROJECT_NAME_RE,
+  wranglerKind,
+  type WranglerExtras,
+} from "./wrangler-config";
 
 /** In one directory, in this order (Wrangler's, then the legacy file). */
 export const PROJECT_FILES = ["wrangler.json", "wrangler.jsonc", "wrangler.toml", "sproutboat.jsonc"] as const;
@@ -49,7 +55,7 @@ export type Limits = { memory_mb?: number; wall_ms?: number; storage_mb?: number
 
 export type Settings = {
   account?: string;
-  /** The app's name on the Cloud, for a Wrangler file whose own name is not a valid one (3 to 32 of a-z, 0-9, -). */
+  /** The app's name on the Cloud, for a Wrangler file whose own name is not a valid one (3 to 51 of a-z, 0-9, -). */
   name?: string;
   limits: Limits;
   /** Where each effective value came from, for the deploy report. */
@@ -63,7 +69,6 @@ const LIMIT_RANGES = {
   storage_mb: [1, 1_048_576],
 } as const;
 const LIMIT_BY_NAME = new Map<string, readonly [number, number]>(Object.entries(LIMIT_RANGES));
-const PROJECT_NAME_RE = /^[a-z0-9](?:[a-z0-9-]{1,30}[a-z0-9])?$/;
 const ACCOUNT_RE = /^[a-z0-9](?:[a-z0-9-]{0,62}[a-z0-9])?$/;
 
 type JsonRec = JsonObject;
@@ -115,7 +120,7 @@ export function readSettings(
           settings.from.name = label;
         } else
           errors.push(
-            `${SETTINGS_FILE}: ${where}name must be 3 to 32 characters: lowercase letters, digits and dashes`,
+            `${SETTINGS_FILE}: ${where}name must be 3 to ${APP_NAME_MAX} characters: lowercase letters, digits and dashes`,
           );
       }
       if (block.limits !== undefined) {
@@ -183,6 +188,7 @@ export type LoadedProject =
       limitSources: Record<string, string>;
       dev: WranglerExtras["dev"];
       env: string | undefined;
+      declaredDate: string | undefined;
     }
   | { ok: false; errors: string[] };
 
@@ -222,6 +228,7 @@ export function loadProjectText(
       limitSources: {},
       dev: undefined,
       env: undefined,
+      declaredDate: undefined,
     };
   }
   const kind = wranglerKind(fileName);
@@ -253,5 +260,6 @@ export function loadProjectText(
     limitSources,
     dev: loaded.extras.dev,
     env: loaded.extras.env,
+    declaredDate: loaded.extras.declaredDate,
   };
 }
