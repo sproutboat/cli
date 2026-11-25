@@ -238,7 +238,26 @@ type CallResult = { status: number; text: string; body?: JsonObject; headers: He
 type CallFn = (c: Call) => Promise<CallResult>;
 export type CloudCredentials = Pick<CloudDeployPlan, "apiUrl" | "token" | "tokenFromEnv">;
 
-export function makeCall(plan: CloudCredentials): CallFn {
+/** A key over its request limit is told when to come back; a deploy waits and tries again instead of failing halfway through its uploads. */
+const MAX_RATE_RETRIES = 5;
+const MAX_RATE_WAIT_S = 65;
+
+export type CallHooks = { sleep?: (ms: number) => Promise<void>; onWait?: (seconds: number, attempt: number) => void };
+
+/** Seconds the Cloud asked for: the `retry-after` header, else `retry_after_s` or `retry_after` in the body. */
+export function retryAfterSeconds(headers: Headers, body: JsonObject | undefined): number | undefined {
+  const header = Number(headers.get("retry-after"));
+  if (Number.isFinite(header) && header > 0) return Math.ceil(header);
+  for (const v of [body?.retry_after_s, body?.retry_after]) if (isSafeInteger(v) && v > 0) return v;
+  return undefined;
+}
+
+export function makeCall(plan: CloudCredentials, hooks: CallHooks = {}): CallFn {
+  const sleep = hooks.sleep ?? ((ms: number) => new Promise<void>((done) => setTimeout(done, ms)));
+  const onWait =
+    hooks.onWait ??
+    ((seconds: number) =>
+      process.stderr.write(dim(`  waiting  this key is over its request limit; retrying in ${seconds} s\n`)));
   return async (c) => {
     const headers = new Headers(authHeaders(plan.token));
     let body = c.body;
@@ -247,12 +266,21 @@ export function makeCall(plan: CloudCredentials): CallFn {
       body = JSON.stringify(c.json);
     } else if (body !== undefined) headers.set("content-type", "application/octet-stream");
     let response: Response;
-    try {
-      response = await fetch(`${plan.apiUrl}${c.path}`, { method: c.method, headers, body });
-    } catch {
-      throw new CloudError(`cannot reach ${plan.apiUrl}; check the address and your network`);
+    let text = "";
+    for (let attempt = 0; ; attempt++) {
+      try {
+        response = await fetch(`${plan.apiUrl}${c.path}`, { method: c.method, headers, body });
+      } catch {
+        throw new CloudError(`cannot reach ${plan.apiUrl}; check the address and your network`);
+      }
+      text = await response.text();
+      // 429 is retried only when the caller did not list it as an answer it handles itself (domains and data routes do).
+      if (response.status !== 429 || (c.ok ?? []).includes(429) || attempt >= MAX_RATE_RETRIES) break;
+      const wait = retryAfterSeconds(response.headers, parseBody(text));
+      if (wait === undefined || wait > MAX_RATE_WAIT_S) break;
+      onWait(wait, attempt + 1);
+      await sleep(wait * 1000);
     }
-    const text = await response.text();
     if (!response.ok && !(c.ok ?? []).includes(response.status))
       throw new CloudError(explainApiFailure(response.status, text, plan.tokenFromEnv));
     return { status: response.status, text, body: parseBody(text), headers: response.headers };
