@@ -10,6 +10,10 @@ maintained going forward by the `release` skill.
 
 ## Unreleased
 
+## [0.65.0] - 2026-11-25
+
+Runtime and toolchain pins unchanged: `@sproutboat/runtime` ^0.49.2 and `@sproutboat/toolchain` ^0.29.1. This release reads `wrangler.jsonc`, `wrangler.json` and `wrangler.toml` as written, gives a Wrangler file Cloudflare's `compatibility_date` meaning, and allows app names up to 51 characters (the Cloud must also be updated for names over 32).
+
 ### Added
 
 - **`wrangler.jsonc`, `wrangler.json` and `wrangler.toml` are the project file.** A Cloudflare project deploys unchanged: `name`, `main` (any path), `compatibility_date`, `vars` (any JSON value), `kv_namespaces`, `d1_databases` (with per-database `migrations_dir`), `r2_buckets`, `durable_objects` with `migrations`, `queues` as `producers` and `consumers` (a queue is consumed only when listed under `consumers`), `triggers.crons`, `services`, `assets`, `ratelimits`, `secrets.required`, `limits.cpu_ms`, `workers_dev` and `env.<name>`. `--env` and `CLOUDFLARE_ENV` select an environment. Cloudflare products Sproutboat does not run load with one warning each; harmless fields are silent. All 41 files of `cloudflare/templates` are in the tests.
@@ -2005,7 +2009,9 @@ its own package.
 - Renamed the package to `sproutboat` (was `@sproutboat/cli`); dropped the
   `sprout` bin alias in favour of a user-defined shell alias.
 
-[Unreleased]: https://github.com/sproutboat/cli/compare/v0.63.0...HEAD
+[Unreleased]: https://github.com/sproutboat/cli/compare/v0.65.0...HEAD
+[0.65.0]: https://github.com/sproutboat/cli/compare/v0.64.0...v0.65.0
+[0.64.0]: https://github.com/sproutboat/cli/compare/v0.63.0...v0.64.0
 [0.63.0]: https://github.com/sproutboat/cli/compare/v0.62.0...v0.63.0
 [0.61.0]: https://github.com/sproutboat/cli/compare/v0.60.0...v0.61.0
 [0.60.0]: https://github.com/sproutboat/cli/compare/v0.59.1...v0.60.0
