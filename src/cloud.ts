@@ -179,6 +179,10 @@ export function explainApiFailure(status: number, text: string, fromEnv: boolean
     const seconds = isSafeInteger(body.retry_after) ? ` in ${body.retry_after} s` : " shortly";
     return `too many requests for this team; try again${seconds}`;
   }
+  if (status === 429 && body?.reason === "key-rate-limited") {
+    const seconds = isSafeInteger(body.retry_after_s) ? ` in ${body.retry_after_s} s` : " in a minute";
+    return `this API key is over its request limit; try again${seconds}`;
+  }
   if (status === 503 && body?.reason === "audit-unavailable")
     return "the Cloud could not record this request in its audit log, so it was not served; try again shortly";
   return `${detail} (HTTP ${status})`;

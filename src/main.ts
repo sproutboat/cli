@@ -109,6 +109,7 @@ import {
   listCloudSecrets,
   patchCloudSecrets,
   putCloudSecret,
+  secretWarningLines,
   readSecretsFile,
 } from "./cloud-secrets";
 import {
@@ -1930,7 +1931,8 @@ async function bulkSecrets(positional: string[], flags: ReturnType<typeof takeFl
     await guard(async () => {
       const credentials = await cloudCredentials(targetUrl, flags["--account"] ?? project.account);
       for (const warning of shortSecretWarnings(bulk.set)) console.warn(amber(`! ${warning}`));
-      const generation = await patchCloudSecrets(credentials, app, bulk);
+      const { generation, warnings } = await patchCloudSecrets(credentials, app, bulk);
+      for (const line of secretWarningLines(warnings)) console.warn(amber(`! ${line}`));
       await finishCloudSecretChange({ credentials, app, generation, noDeploy, what: `${summary} on ${app}` });
     });
     return;
@@ -2017,7 +2019,8 @@ async function cloudSecrets(
   const value = inlineValue ?? (await Bun.stdin.text()).replace(/\r?\n$/, "");
   if (!value) fail("no value: pipe it on stdin, or pass --value <value>");
   for (const warning of shortSecretWarnings({ [name!]: value })) console.warn(amber(`! ${warning}`));
-  const generation = await putCloudSecret(credentials, app, name!, value);
+  const { generation, warnings } = await putCloudSecret(credentials, app, name!, value);
+  for (const line of secretWarningLines(warnings)) console.warn(amber(`! ${line}`));
   await finishCloudSecretChange({ credentials, app, generation, noDeploy, what: `set ${name} on ${app}` });
 }
 

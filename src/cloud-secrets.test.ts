@@ -6,7 +6,14 @@ import type { CloudIo } from "./cloud";
 import { jsonObject } from "./json";
 import { buildAndDeploy, deployToCloud, SERVICE_BINDINGS_MIN_DATE, type BuildPlan } from "./cloud-deploy";
 import { FAKE_KEY, fakeAppId, startFakeCloud, type FakeOptions } from "./cloud-fake";
-import { deleteCloudSecret, listCloudSecrets, putCloudSecret, readSecretsFile } from "./cloud-secrets";
+import {
+  deleteCloudSecret,
+  listCloudSecrets,
+  patchCloudSecrets,
+  putCloudSecret,
+  readSecretsFile,
+  secretWarningLines,
+} from "./cloud-secrets";
 
 const io: CloudIo = {
   log: () => {},
@@ -108,9 +115,22 @@ describe("secrets on deploy", () => {
 });
 
 describe("secrets commands against the Cloud", () => {
+  test("a secret the app does not declare comes back as a warning with the fix line", async () => {
+    await withCloud({ appExists: true, declaredSecrets: ["KNOWN"] }, async (cloud) => {
+      expect((await putCloudSecret(creds(cloud.url), "hello", "KNOWN", "k")).warnings).toEqual([]);
+      const written = await putCloudSecret(creds(cloud.url), "hello", "STRAY", "s");
+      expect(written.generation).toBe(2);
+      expect(secretWarningLines(written.warnings)).toEqual([
+        'STRAY is stored, but this app does not declare it, so the Worker\'s env does not carry it; add "STRAY" to "secrets" in sproutboat.jsonc (secrets: ["STRAY"]), then run `sproutboat deploy`',
+      ]);
+      const bulk = await patchCloudSecrets(creds(cloud.url), "hello", { set: { KNOWN: "k", OTHER: "o" }, delete: [] });
+      expect(bulk.warnings.map((w) => w.name)).toEqual(["OTHER"]);
+    });
+  });
+
   test("put, list and delete by name", async () => {
     await withCloud({ appExists: true }, async (cloud) => {
-      expect(await putCloudSecret(creds(cloud.url), "hello", "B_KEY", "b")).toBe(1);
+      expect(await putCloudSecret(creds(cloud.url), "hello", "B_KEY", "b")).toEqual({ generation: 1, warnings: [] });
       await putCloudSecret(creds(cloud.url), "hello", "A_KEY", "a");
       expect(await listCloudSecrets(creds(cloud.url), "hello")).toEqual(["A_KEY", "B_KEY"]);
       await deleteCloudSecret(creds(cloud.url), "hello", "A_KEY");
