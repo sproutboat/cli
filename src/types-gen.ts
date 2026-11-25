@@ -1,7 +1,7 @@
 /**
  * `sproutboat types`: the project's `Env` as TypeScript, as `wrangler types` writes it, in `worker-configuration.d.ts`.
  * Binding names version with the project and binding shapes with the CLI. Names need no quoting: `parseConfig` holds every
- * binding and var to /^[A-Z][A-Z0-9_]*$/.
+ * binding and var to a JavaScript identifier (BINDING_NAME in @sproutboat/config).
  */
 import { createHash } from "node:crypto";
 import { resourceRefs, type SproutboatConfig } from "./config";

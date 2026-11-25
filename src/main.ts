@@ -6,7 +6,7 @@ import { basename, dirname, relative, resolve } from "node:path";
 import { tmpdir } from "node:os";
 import { isBoolean, isSafeInteger, isString, jsonObject, parseJsonValue, type JsonObject } from "./json";
 import type { AssetFiles } from "./assets";
-import { pinBindingId, resourceRefs, type SproutboatConfig } from "./config";
+import { isBindingName, pinBindingId, resourceRefs, type SproutboatConfig } from "./config";
 import { validateHttpSyncSource } from "./source";
 import { buildArtifact, emitGenerated } from "./build";
 import { LEGACY_TYPES_FILE, TYPES_FILE } from "./types-gen";
@@ -116,6 +116,7 @@ import {
 import {
   deleteCloudSecret,
   listCloudSecrets,
+  storedSecretNames,
   patchCloudSecrets,
   putCloudSecret,
   secretWarningLines,
@@ -464,6 +465,7 @@ async function readProjectConfig(directory?: string) {
     account: loaded.account,
     migrationsDir: loaded.migrationsDir,
     migrationsDirs: loaded.migrationsDirs,
+    d1Names: loaded.d1Names,
     workersDev: resolveWorkersDev(loaded.workersDev),
     configFile,
     dialect: loaded.dialect,
@@ -685,8 +687,12 @@ async function emitOnly(directory: string | undefined, target: BuildTarget, stan
 /** The standalone source unit the Cloud compile starts from, and whether the assets went into the module and why. */
 async function emitStandaloneUnit(
   directory: string | undefined,
+  /** Stored secrets the config does not declare: bound anyway, as Cloudflare binds every secret of a Worker. */
+  extraSecrets: readonly string[] = [],
 ): Promise<{ generatedPath: string; assetBake?: AssetBakePlan }> {
   const project = await readProject(directory);
+  if (extraSecrets.length > 0)
+    project.config = { ...project.config, secrets: [...new Set([...(project.config.secrets ?? []), ...extraSecrets])] };
   try {
     const unit = await emitStandalone(
       {
@@ -1381,7 +1387,24 @@ async function deployCloud(args: string[], apiUrl: string, flags: ReturnType<typ
   const hosts = workersDev.enabled ? [platformName] : [];
   const unroute = workersDev.enabled ? [] : [platformName];
 
-  const cfg = project.config;
+  let secretValues: Record<string, string> | undefined;
+  const secretsFile = flags["--secrets-file"];
+  if (secretsFile !== undefined) {
+    const read = await readSecretsFileOrFail(resolve(secretsFile));
+    for (const warning of read.warnings) io.warn(`! ${warning}`);
+    secretValues = read.values;
+  }
+  // Every stored secret is bound, declared in the config or not (Cloudflare binds them all): the names the app holds now, and the ones this deploy sets.
+  const declaredSecrets = project.config.secrets ?? [];
+  const stored = session
+    ? await storedSecretNames({ apiUrl, token: session.token, tokenFromEnv: session.source !== "stored login" }, name)
+    : { names: [], warning: undefined };
+  if (stored.warning) io.warn(`! ${stored.warning}`);
+  const undeclared = [...new Set([...stored.names, ...Object.keys(secretValues ?? {})])].filter(
+    (secret) => !declaredSecrets.includes(secret),
+  );
+  const cfg =
+    undeclared.length > 0 ? { ...project.config, secrets: [...declaredSecrets, ...undeclared] } : project.config;
   const services = cfg.services ?? [];
   guardSync(() => checkServiceBindings(name, services, cfg.compatibility_date));
   let cloudBindings!: CloudBindings;
@@ -1390,13 +1413,6 @@ async function deployCloud(args: string[], apiUrl: string, flags: ReturnType<typ
     checkDurableObjectExports(cfg, project.directory);
   });
   for (const warning of cloudBindings.warnings) io.warn(`! ${warning}`);
-  let secretValues: Record<string, string> | undefined;
-  const secretsFile = flags["--secrets-file"];
-  if (secretsFile !== undefined) {
-    const read = await readSecretsFileOrFail(resolve(secretsFile));
-    for (const warning of read.warnings) io.warn(`! ${warning}`);
-    secretValues = read.values;
-  }
 
   const assets = project.config.assets ? buildAssetBundle(project.directory, project.config.assets) : undefined;
   // Regular deploys build in the Cloud from the bundled source. --module (a prebuilt module) and --sproutd with
@@ -1414,7 +1430,7 @@ async function deployCloud(args: string[], apiUrl: string, flags: ReturnType<typ
     await compileModule({
       project: name,
       emit: async () => {
-        const unit = await emitStandaloneUnit(directory);
+        const unit = await emitStandaloneUnit(directory, undeclared);
         assetBake = unit.assetBake;
         return unit.generatedPath;
       },
@@ -1425,7 +1441,7 @@ async function deployCloud(args: string[], apiUrl: string, flags: ReturnType<typ
     });
   } else if (modulePath !== undefined && !existsSync(modulePath)) fail(`no such module: ${modulePath}`);
   if (fromSource) {
-    const unit = await emitStandaloneUnit(directory);
+    const unit = await emitStandaloneUnit(directory, undeclared);
     sourceUnit = unit.generatedPath;
     assetBake = unit.assetBake;
   }
@@ -1441,6 +1457,10 @@ async function deployCloud(args: string[], apiUrl: string, flags: ReturnType<typ
       `assets    ${assets.files} files, ${assetBake ? describeAssetBake(assetBake) : "served by the edge (a prebuilt module carries its own)"}`,
     );
   for (const line of describeCloudBindings(cloudBindings)) console.log(`binding   ${line}`);
+  if (undeclared.length > 0)
+    console.log(
+      `secrets   ${undeclared.join(", ")} bound although the config does not declare them (stored on the app)`,
+    );
   if (services.length > 0)
     console.log(`services  ${services.map((entry) => `${entry.binding} -> ${entry.service}`).join(", ")}`);
   if (secretValues) console.log(`secrets   ${Object.keys(secretValues).length} from ${secretsFile} (set, others kept)`);
@@ -1988,7 +2008,7 @@ async function secrets(args: string[]) {
   if (sub === "bulk") return bulkSecrets(positional, flags, noDeploy);
   const name = sub === "list" ? undefined : positional.shift();
   if (sub !== "list" && !name) usageError(`secrets ${sub}: missing <NAME>`, `secrets ${sub} <NAME> [project-dir]`);
-  if (name && !/^[A-Z][A-Z0-9_]*$/.test(name)) fail("secret name must be UPPER_SNAKE_CASE");
+  if (name && !isBindingName(name)) fail("secret name must be a JavaScript identifier (letters, digits, _)");
   const { apiUrl: targetUrl } = await resolveApiUrl();
   if ((await deployKind(targetUrl, false)) === "cloud") {
     await guard(() => cloudSecrets(sub, name, inlineValue, positional[0], targetUrl, flags["--account"], noDeploy));
@@ -2211,7 +2231,7 @@ async function d1Contents(args: string[]) {
   }
 
   async function d1Run() {
-    const binding = pickBinding(project.config, database!);
+    const binding = pickBinding(project.config, database!, project.d1Names);
     const dir = resolve(
       project.directory,
       project.migrationsDirs[binding.binding] ?? project.migrationsDir ?? DEFAULT_MIGRATIONS_DIR,

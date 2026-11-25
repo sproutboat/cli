@@ -43,7 +43,9 @@ export function parseBulkSecrets(text: string, label: string): BulkPlan {
     if (empty.length > 0) warnings.push(`${label}: not sent, empty value: ${empty.join(", ")}`);
   }
   if (bad.length > 0)
-    throw new CloudError(`${label}: secret names must be UPPER_SNAKE_CASE; not valid: ${bad.join(", ")}`);
+    throw new CloudError(
+      `${label}: secret names must be JavaScript identifiers (letters, digits, _); not valid: ${bad.join(", ")}`,
+    );
   const total = Object.keys(set).length + remove.length;
   if (total === 0) throw new CloudError(`${label}: no secrets to set or delete`);
   if (total > BULK_MAX) throw new CloudError(`${label}: ${total} entries; at most ${BULK_MAX} per command`);

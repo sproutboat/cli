@@ -213,6 +213,7 @@ export type LoadedProject =
       account: string | undefined;
       migrationsDir: string | undefined;
       migrationsDirs: Record<string, string>;
+      d1Names: Record<string, string>;
       workersDev: boolean | undefined;
       limits: Limits;
       limitSources: Record<string, string>;
@@ -258,6 +259,7 @@ export function loadProjectText(
       account: configAccount(text),
       migrationsDir: configMigrationsDir(text),
       migrationsDirs: {},
+      d1Names: {},
       workersDev: configWorkersDev(text),
       limits: {},
       limitSources: {},
@@ -291,6 +293,7 @@ export function loadProjectText(
     account: settings.settings.account,
     migrationsDir: undefined,
     migrationsDirs: loaded.extras.migrationsDirs,
+    d1Names: loaded.extras.d1Names,
     workersDev: loaded.extras.workersDev,
     limits,
     limitSources,

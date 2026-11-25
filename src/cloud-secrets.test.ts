@@ -122,7 +122,7 @@ describe("secrets commands against the Cloud", () => {
       const written = await putCloudSecret(creds(cloud.url), "hello", "STRAY", "s");
       expect(written.generation).toBe(2);
       expect(secretWarningLines(written.warnings)).toEqual([
-        'STRAY is stored, but this app does not declare it, so the Worker\'s env does not carry it; add "STRAY" to "secrets" in sproutboat.jsonc (secrets: ["STRAY"]), then run `sproutboat deploy`',
+        `STRAY is stored, but the running version does not bind it yet, so the Worker's env does not carry it; run \`sproutboat deploy\`: it binds every stored secret, so "STRAY" need not be listed under "secrets" in the config`,
       ]);
       const bulk = await patchCloudSecrets(creds(cloud.url), "hello", { set: { KNOWN: "k", OTHER: "o" }, delete: [] });
       expect(bulk.warnings.map((w) => w.name)).toEqual(["OTHER"]);
@@ -182,8 +182,8 @@ describe("--secrets-file", () => {
     const read = await readSecretsFile(file);
     expect(read.values).toEqual({ ADMIN_TOKEN: "abc", API_KEY: "x y" });
     expect(read.warnings.join("\n")).toContain("EMPTY");
-    await writeFile(file, "lower=1\nFINE=2\n");
-    await expect(readSecretsFile(file)).rejects.toThrow("not valid: lower");
+    await writeFile(file, "bad-name=1\nFINE=2\n");
+    await expect(readSecretsFile(file)).rejects.toThrow("not valid: bad-name");
     await expect(readSecretsFile(join(work, "missing"))).rejects.toThrow("env file not found");
   });
 });
