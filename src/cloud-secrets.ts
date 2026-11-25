@@ -5,7 +5,7 @@
 import { readEnvFile } from "./env-file";
 import { CloudError } from "./cloud";
 import { makeCall, type CloudCredentials } from "./cloud-deploy";
-import { isSafeInteger, isString } from "./json";
+import { isSafeInteger, isString, jsonObject, type JsonObject } from "./json";
 
 export const SECRET_NAME_RE = /^[A-Z][A-Z0-9_]*$/;
 
@@ -45,19 +45,41 @@ export async function listCloudSecrets(credentials: CloudCredentials, project: s
   return Array.isArray(names) ? names.filter(isString) : [];
 }
 
+/** What the Cloud adds to a secrets write: a stored secret that the app's bindings do not declare never reaches the Worker's env. */
+export type SecretWarning = { code: string; name: string; message: string; fix: string };
+
+export type SecretWrite = { generation: number | undefined; warnings: SecretWarning[] };
+
+function secretWrite(body: JsonObject | undefined): SecretWrite {
+  const generation = body?.record_generation;
+  const warnings: SecretWarning[] = [];
+  const sent = body?.warnings;
+  if (Array.isArray(sent))
+    for (const entry of sent) {
+      const w = jsonObject(entry);
+      if (w && isString(w.code) && isString(w.name) && isString(w.message))
+        warnings.push({ code: w.code, name: w.name, message: w.message, fix: isString(w.fix) ? w.fix : "" });
+    }
+  return { generation: isSafeInteger(generation) ? generation : undefined, warnings };
+}
+
+/** One line per warning: what happened, then the exact fix. */
+export function secretWarningLines(warnings: SecretWarning[]): string[] {
+  return warnings.map((w) => (w.fix ? `${w.message}; ${w.fix}` : w.message));
+}
+
 export async function putCloudSecret(
   credentials: CloudCredentials,
   project: string,
   name: string,
   value: string,
-): Promise<number | undefined> {
+): Promise<SecretWrite> {
   const result = await secretCall(credentials, project, "write", {
     method: "PUT",
     path: `/v1/apps/${project}/secrets/${name}`,
     json: { value },
   });
-  const generation = result.body?.record_generation;
-  return isSafeInteger(generation) ? generation : undefined;
+  return secretWrite(result.body);
 }
 
 type SecretsPatchBody = { set?: Record<string, string>; delete?: string[] };
@@ -66,7 +88,7 @@ export async function patchCloudSecrets(
   credentials: CloudCredentials,
   project: string,
   patch: { set: Record<string, string>; delete: string[] },
-): Promise<number | undefined> {
+): Promise<SecretWrite> {
   const body: SecretsPatchBody = {};
   if (Object.keys(patch.set).length > 0) body.set = patch.set;
   if (patch.delete.length > 0) body.delete = patch.delete;
@@ -75,8 +97,7 @@ export async function patchCloudSecrets(
     path: `/v1/apps/${project}/secrets`,
     json: body,
   });
-  const generation = result.body?.record_generation;
-  return isSafeInteger(generation) ? generation : undefined;
+  return secretWrite(result.body);
 }
 
 export async function deleteCloudSecret(

@@ -18,6 +18,8 @@ export type FakeOptions = {
   /** A Cloud that predates `hosts_patch`: a spec carrying it is a 400 naming the key, as the real one answered. */
   legacyHosts?: boolean;
   appExists?: boolean;
+  /** The secret names the app declares. A secret written under another name answers with a `secret-not-declared` warning, as the real Cloud does; unset, every name counts as declared. */
+  declaredSecrets?: string[];
   /** Fail every authenticated call with this status. */
   failWith?: { status: number; body: JsonObject };
   /** A team key: PUT /v1/modules/<sha> is refused (403 module-upload-disabled), as on the real Cloud. */
@@ -120,6 +122,18 @@ function invalidRecordReason(sent: JsonObject): string | null {
       return "invalid queue_consumers.dead_letter_queue";
   }
   return null;
+}
+
+function undeclaredWarnings(declared: string[] | undefined, names: string[]) {
+  if (declared === undefined) return [];
+  return names
+    .filter((name) => !declared.includes(name))
+    .map((name) => ({
+      code: "secret-not-declared",
+      name,
+      message: `${name} is stored, but this app does not declare it, so the Worker's env does not carry it`,
+      fix: `add "${name}" to "secrets" in sproutboat.jsonc (secrets: ["${name}"]), then run \`sproutboat deploy\``,
+    }));
 }
 
 export function startFakeCloud(options: FakeOptions = {}) {
@@ -722,6 +736,10 @@ export function startFakeCloud(options: FakeOptions = {}) {
           app_id: fakeAppId(m[1]!),
           record_generation: generation,
           names: [...secretStore.keys()].sort(),
+          warnings: undeclaredWarnings(
+            options.declaredSecrets,
+            Object.keys(jsonObject(patch.set ?? null) ?? {}).sort(),
+          ),
         });
       }
       m = /^\/v1\/apps\/([^/]+)\/secrets(?:\/([^/]+))?$/.exec(path);
@@ -733,7 +751,12 @@ export function startFakeCloud(options: FakeOptions = {}) {
         if (request.method === "PUT" && m[2]) {
           secretStore.set(m[2], String(JSON.parse(body).value));
           generation++;
-          return Response.json({ app_id: fakeAppId(m[1]!), record_generation: generation, name: m[2] });
+          return Response.json({
+            app_id: fakeAppId(m[1]!),
+            record_generation: generation,
+            name: m[2],
+            warnings: undeclaredWarnings(options.declaredSecrets, [m[2]]),
+          });
         }
         if (request.method === "DELETE" && m[2]) {
           if (!secretStore.delete(m[2])) return Response.json({ error: "no such secret" }, { status: 404 });

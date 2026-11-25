@@ -72,6 +72,18 @@ describe("secret put and delete on the Cloud", () => {
     });
   });
 
+  test("a name the app does not declare is stored, warned about with the fix line, and the command still succeeds", async () => {
+    await withCloud({ declaredSecrets: ["API_KEY"] }, async (cloud, env) => {
+      const stray = await cli(project(), ["secrets", "put", "STRAY", "--value", "x", "--no-deploy"], env);
+      expect(stray.code).toBe(0);
+      expect(stray.stderr).toContain("! STRAY is stored, but this app does not declare it");
+      expect(stray.stderr).toContain('add "STRAY" to "secrets" in sproutboat.jsonc');
+      expect(cloud.secrets).toEqual({ STRAY: "x" });
+      const declared = await cli(project(), ["secrets", "put", "API_KEY", "--value", "y", "--no-deploy"], env);
+      expect(declared.stderr).not.toContain("does not declare");
+    });
+  });
+
   test("--no-deploy returns as soon as the write is stored, without waiting for a host", async () => {
     await withCloud({}, async (cloud, env) => {
       const run = await cli(project(), ["secrets", "put", "API_KEY", "--no-deploy"], env, "from-stdin\n");
