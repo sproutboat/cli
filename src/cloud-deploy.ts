@@ -33,6 +33,17 @@ export function buildFailureHeadline(message: string | undefined): string {
   return (reasons.at(-1) ?? real.at(-1) ?? lines[0])!;
 }
 
+/** What the final "build failed:" shows. `abi_rejected` is the one failure whose whole message is the answer (what differs, which shared
+ * units, the likely cause, that no CLI version causes it), so it is shown in full, a sentence to a line, instead of one headline. */
+export function buildFailureText(error: { code?: string; message: string } | null): string {
+  if (error?.code !== "abi_rejected") return buildFailureHeadline(error?.message);
+  const sentences = error.message
+    .split(/\.\s+(?=[A-Za-z])/)
+    .map((s) => s.trim().replace(/\.$/, ""))
+    .filter((s) => s && !PROGRESS.test(s));
+  return sentences.map((s, i) => (i === 0 ? s : `\n  ${s}`)).join("");
+}
+
 export const hostFor = (project: string, team: string): string => `${project}.${team}.sproutboat.app`;
 
 type AssetVariant = { hash: string; size: number };
@@ -946,7 +957,7 @@ export async function buildAndDeploy(plan: BuildPlan, io: CloudIo, signal?: Abor
         `  peak memory ${formatMB(peakMemoryBytes)}${memoryCapBytes === null ? "" : ` (cap ${formatMB(memoryCapBytes)})`}`,
       );
   }
-  if (view.state === "failed") throw new CloudError(`build failed: ${buildFailureHeadline(view.error?.message)}`);
+  if (view.state === "failed") throw new CloudError(`build failed: ${buildFailureText(view.error)}`);
   io.log(ok(formatBuildSummary(view)));
   let generation = view.recordGeneration;
   if (generation === undefined) throw new CloudError("the Cloud's reply carried no record generation");
