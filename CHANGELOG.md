@@ -16,6 +16,7 @@ maintained going forward by the `release` skill.
 - **`sproutboat.settings.jsonc`** holds what is Sproutboat's: `account`, `name`, `limits` and an `env` block. `deploy` sends `spec.limits` and prints where each value came from; `SPROUTBOAT_LIMITS_MEMORY_MB`, `SPROUTBOAT_LIMITS_WALL_MS` and `SPROUTBOAT_LIMITS_STORAGE_MB` override it.
 - **A Wrangler file's `compatibility_date` is Cloudflare's.** An older or missing date runs as 2026-11-22, so a template with a 2025 date gets `(request, env, ctx)` handlers and Promise-returning bindings like on Workers; a later date is kept, and `check` and `deploy` say which date the build uses. The legacy `sproutboat.jsonc` keeps Sproutboat's own dates.
 - **The config a build tool generates is followed.** When `.wrangler/deploy/config.json` points at one (the Cloudflare Vite plugin writes it), that file is read instead, as Wrangler does, with its `main` and `assets.directory` rebased onto the project; run your build first.
+- `assets.run_worker_first` patterns keep Wrangler's meaning: its `*` matches any characters, `/` included, so each `*` becomes `**` here (`/api/*` now also covers `/api/a/b`).
 - **App names up to 51 characters** (was 32) for Wrangler files and the Cloud: the daemon takes app ids of 64 characters, and an id is the name, `_` and 12 hex digits. Needs a Cloud and hosts that accept the longer name.
 
 ### Changed

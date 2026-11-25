@@ -174,7 +174,7 @@ describe("bindings", () => {
       "ratelimits": [{ "name": "LIMITER", "namespace_id": "1", "simple": { "limit": 10, "period": 60 } }],
       "analytics_engine_datasets": [{ "binding": "AE", "dataset": "d" }],
       "version_metadata": { "binding": "VER" },
-      "assets": { "directory": "./dist", "binding": "A", "not_found_handling": "single-page-application", "run_worker_first": ["/api/*"], "html_handling": "none" } }`);
+      "assets": { "directory": "./dist", "binding": "A", "not_found_handling": "single-page-application", "run_worker_first": ["/api/*", "!/api/health", "/x/*/y"], "html_handling": "none" } }`);
     expect(r.value.services).toEqual([
       { binding: "PEER", service: "other-app" },
       { binding: "E", service: "x-app" },
@@ -186,7 +186,7 @@ describe("bindings", () => {
       directory: "dist",
       binding: "A",
       not_found_handling: "single-page-application",
-      run_sprout_first: ["/api/*"],
+      run_sprout_first: ["/api/**", "!/api/health", "/x/**/y"],
     });
     expect(r.warnings.join("\n")).toContain("services[1].entrypoint");
     expect(r.warnings.join("\n")).toContain("assets.html_handling");

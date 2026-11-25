@@ -513,7 +513,8 @@ export function convertWrangler(raw: Rec, options: WranglerOptions = {}): Wrangl
           const first = a.run_worker_first;
           if (isBoolean(first)) assets.run_sprout_first = first;
           else if (Array.isArray(first) && first.every((p) => isStr(p) && /^!?\//.test(p)))
-            assets.run_sprout_first = first.filter(isString);
+            // Wrangler's `*` matches any characters, `/` included; ours is one segment and `**` is the deep one.
+            assets.run_sprout_first = first.filter(isString).map((pattern) => pattern.replace(/\*+/g, "**"));
           else
             err(
               ctx,
