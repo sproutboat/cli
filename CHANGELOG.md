@@ -10,6 +10,19 @@ maintained going forward by the `release` skill.
 
 ## Unreleased
 
+## [0.64.0] - 2026-11-25
+
+Runtime and toolchain pins unchanged: `@sproutboat/runtime` ^0.49.2 and `@sproutboat/toolchain` ^0.29.1. This release finishes `tail --recent` on the Cloud and makes Cloud calls survive a request limit.
+
+### Added
+
+- **`sproutboat tail --recent` prints the time of each stored line.** When the Cloud's logs route sends the time the host stored each line, the output starts every line with the local time (`2026-11-24 16:21:03.448`); a line an older host stored still prints, indented to line up. Against an older Cloud or host, with no stamps at all, the output is unchanged. `--format json` includes `times` when the Cloud sent them.
+- **`secrets put` and `secrets bulk` print the Cloud's warning for a secret the app does not declare.** Such a secret is stored but never reaches the Worker's `env`; the warning says so and prints the exact fix line.
+
+### Fixed
+
+- **A Cloud call over its request limit waits instead of failing a deploy halfway.** On a 429 with `Retry-After` (or `retry_after_s` in the body) the CLI prints a `waiting` line and retries, up to five times and up to 65 seconds each. A longer wait, or a route that handles 429 itself (domains, data), fails as before, now with `this API key is over its request limit; try again in <n> s`.
+
 ## [0.63.0] - 2026-11-23
 
 Runtime and toolchain pins unchanged: `@sproutboat/runtime` ^0.49.2 and `@sproutboat/toolchain` ^0.29.1. This release is the Sproutboat Cloud work of the closed-alpha gate: a certificate wait, `delete`, the app limit and `tail`.
