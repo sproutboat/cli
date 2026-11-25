@@ -7,6 +7,7 @@ import type { CloudIo } from "./cloud";
 import {
   buildAndDeploy,
   buildFailureHeadline,
+  buildFailureText,
   cancelCloudBuild,
   deployToCloud,
   formatBuildState,
@@ -610,6 +611,17 @@ describe("failure headline and host note", () => {
     expect(buildFailureHeadline("[12ms] parsed\nthe compile timed out after 55 s")).toBe(
       "the compile timed out after 55 s",
     );
+  });
+  test("abi_rejected is shown in full, a sentence to a line; other failures keep the headline", () => {
+    const message =
+      "the app's code does not fit the runtime generation (abi_rejected): it changes the shared units (commonUnits). shared units that differ: node_internal_encoding. likely cause: the app reads encodeInto().written. This is not a CLI version mismatch: the runtime is the Cloud's. a.js parsed";
+    expect(buildFailureText({ code: "abi_rejected", message })).toBe(
+      "the app's code does not fit the runtime generation (abi_rejected): it changes the shared units (commonUnits)\n  shared units that differ: node_internal_encoding\n  likely cause: the app reads encodeInto().written\n  This is not a CLI version mismatch: the runtime is the Cloud's",
+    );
+    expect(buildFailureText({ code: "compile_failed", message: "parsed\nError: unsupported syntax" })).toBe(
+      "Error: unsupported syntax",
+    );
+    expect(buildFailureText(null)).toBe("no reason given");
   });
   test("an empty message has a placeholder", () => {
     expect(buildFailureHeadline(undefined)).toBe("no reason given");

@@ -10,6 +10,10 @@ maintained going forward by the `release` skill.
 
 ## Unreleased
 
+### Changed
+
+- **A Cloud build that ends in `abi_rejected` prints the Cloud's whole explanation, a sentence to a line,** instead of one headline: what differs from the generation, the shared units when the builder reports them, the likely cause, and that no CLI version causes it (the shared runtime of an app is the generation's own, whichever CLI emitted the app). Every other failure keeps its one-line headline.
+
 ## [0.64.0] - 2026-11-25
 
 Runtime and toolchain pins unchanged: `@sproutboat/runtime` ^0.49.2 and `@sproutboat/toolchain` ^0.29.1. This release finishes `tail --recent` on the Cloud and makes Cloud calls survive a request limit.
