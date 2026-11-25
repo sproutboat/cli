@@ -406,20 +406,19 @@ async function readProjectConfig(directory?: string) {
       `${command} does not use --env with sproutboat.jsonc: it only selects .dev.vars.<name> and the .env.<name> files for \`dev\`, and this file has no environments. Rename it to wrangler.jsonc to use env.<name>.`,
     );
   // A command reads the config more than once; each notice is printed once per process.
-  for (const warning of loaded.warnings)
-    if (!noticed.has(warning)) {
-      noticed.add(warning);
-      console.warn(amber(`! ${warning}`));
-    }
-  if (loaded.dialect === "legacy" && !noticed.has("legacy"))
-    noticed.add("legacy") &&
-      console.warn(
-        amber(
-          "! sproutboat.jsonc is deprecated: Sproutboat now reads wrangler.jsonc (the file Cloudflare's tools use). Rename it and rewrite the bindings as Wrangler's; this file keeps working for now.",
-        ),
-      );
-  else if (shadowed.includes(LEGACY_FILE) && !noticed.has("shadowed"))
-    noticed.add("shadowed") && console.warn(amber(`! using ${configFile}; sproutboat.jsonc is legacy and ignored`));
+  const say = (key: string, line: string) => {
+    if (noticed.has(key)) return;
+    noticed.add(key);
+    console.warn(amber(line));
+  };
+  for (const warning of loaded.warnings) say(warning, `! ${warning}`);
+  if (loaded.dialect === "legacy")
+    say(
+      "legacy",
+      "! sproutboat.jsonc is deprecated: Sproutboat now reads wrangler.jsonc (the file Cloudflare's tools use). Rename it and rewrite the bindings as Wrangler's; this file keeps working for now.",
+    );
+  else if (shadowed.includes(LEGACY_FILE))
+    say("shadowed", `! using ${configFile}; sproutboat.jsonc is legacy and ignored`);
   const settings =
     loaded.dialect === "wrangler" ? await legacyOnly(projectDirectory, loaded.dialect, shadowed) : undefined;
   return {
