@@ -294,7 +294,7 @@ export async function resolveSession(options: SessionOptions): Promise<CloudSess
   else if (io.interactive) slug = await io.choose("Which team should this deploy go to?", slugs);
   else
     throw new CloudError(
-      `you are logged in to ${slugs.length} teams (${slugs.join(", ")}); choose one with \`account\` in sproutboat.jsonc, --account or SPROUTBOAT_ACCOUNT`,
+      `you are logged in to ${slugs.length} teams (${slugs.join(", ")}); choose one with \`account\` in sproutboat.settings.jsonc (or sproutboat.jsonc), --account or SPROUTBOAT_ACCOUNT`,
     );
   const team = stored[slug]!;
   return { apiUrl, token: team.token, source: "stored login", slug, name: team.name || slug };

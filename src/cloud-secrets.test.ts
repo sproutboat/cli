@@ -1,3 +1,4 @@
+import { withoutNotice } from "./test-notice";
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
@@ -320,7 +321,7 @@ describe("the CLI end to end", () => {
       expect(put.stdout).toContain("set ADMIN_TOKEN on hello");
       expect(cloud.secrets).toEqual({ ADMIN_TOKEN: "hunter2" });
       const long = await run(["secrets", "put", "LONG_TOKEN", project], env(cloud.url), "hunter2-and-more\n");
-      expect(long.stderr).toBe("");
+      expect(withoutNotice(long.stderr)).toBe("");
       await run(["secrets", "delete", "LONG_TOKEN", project], env(cloud.url));
       const list = await run(["secrets", "list", project], env(cloud.url));
       expect(list.stdout.trim()).toBe("ADMIN_TOKEN");
@@ -355,7 +356,7 @@ describe("the CLI end to end", () => {
       expect(plain.code).toBe(0);
       expect(cloud.secrets).toEqual({});
       const out = await run(["deploy", project, "--secrets-file", join(project, "prod.vars")], env(cloud.url));
-      expect(out.stderr).toBe("");
+      expect(withoutNotice(out.stderr)).toBe("");
       expect(out.code).toBe(0);
       expect(out.stdout).toContain("secrets   1 from");
       expect(cloud.secrets).toEqual({ ADMIN_TOKEN: "abc" });
@@ -397,7 +398,7 @@ describe("the CLI end to end", () => {
     );
     await withCloud({ teamKey: true, otherApps: ["quote-service"] }, async (cloud) => {
       const out = await run(["deploy", project], env(cloud.url));
-      expect(out.stderr).toBe("");
+      expect(withoutNotice(out.stderr)).toBe("");
       expect(out.code).toBe(0);
       expect(out.stdout).toContain("services  PEER -> quote-service");
       expect(cloud.spec.services).toEqual({ PEER: fakeAppId("quote-service") });

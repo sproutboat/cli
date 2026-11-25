@@ -182,9 +182,9 @@ test("--cwd and --config find the project from anywhere", async () => {
 });
 
 test("--env and --env-file are refused where they would do nothing", async () => {
-  const env = await cli(["deploy", "--env", "staging"]);
+  const env = await cli(["whoami", "--env", "staging"]);
   expect(env.code).toBe(2);
-  expect(env.stderr).toContain("deploy does not use --env");
+  expect(env.stderr).toContain("whoami does not use --env");
   const file = await cli(["whoami", "--env-file", ".env"]);
   expect(file.code).toBe(2);
   expect(file.stderr).toContain("does not read env files");

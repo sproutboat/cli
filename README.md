@@ -117,10 +117,10 @@ preselects the team on the approval page.
   always wins over a stored login. `SPROUTBOAT_TOKEN` is the older name. With no
   terminal and no token, `deploy` fails and names `SPROUTBOAT_API_TOKEN`; in a
   terminal it starts the login itself.
-- **Which team.** `account` in `sproutboat.jsonc` (like `account_id`), else
-  `--account`, else `SPROUTBOAT_ACCOUNT`, else your only stored team, else a
-  prompt. Precedence is `--account`, the config field, then the environment
-  variable. A key from the environment belongs to one team, so a different
+- **Which team.** `account` in `sproutboat.settings.jsonc` (a legacy
+  `sproutboat.jsonc` keeps its own `account`), else `--account`, else
+  `SPROUTBOAT_ACCOUNT`, else your only stored team, else a prompt. Precedence is
+  `--account`, the environment variable, then the file. A key from the environment belongs to one team, so a different
   `account` is an error.
 - **Which addresses.** A deploy puts `<app>.<team>.sproutboat.app` among the
   app's routes, the way a Worker gets its `workers.dev` address. `workers_dev`
@@ -293,7 +293,29 @@ complete export. Existing output files require `--force`.
 
 ## Config
 
-`sproutboat.jsonc`: the entry point plus Cloudflare-shaped `env.*` bindings.
+The project file is the one Cloudflare uses: `wrangler.jsonc`, `wrangler.json` or `wrangler.toml`, read as written
+(`name`, `main`, `compatibility_date`, `vars`, `kv_namespaces`, `d1_databases`, `r2_buckets`, `durable_objects` and
+`migrations`, `queues`, `triggers.crons`, `services`, `assets`, `ratelimits`, `env.<name>`). The first of
+`wrangler.json`, `wrangler.jsonc`, `wrangler.toml`, then the legacy `sproutboat.jsonc`, in the directory or the nearest
+parent, is the project. `--env` or `CLOUDFLARE_ENV` selects `env.<name>` (the app is then named `<name>-<env>`). A Cloudflare
+product Sproutboat does not run (Workers AI, Hyperdrive, Vectorize, Containers, …) loads with one warning that says what will
+be missing; fields that mean nothing here (`observability`, `upload_source_maps`, …) are silent. Cloudflare ids on KV, D1 and R2
+bindings are ignored: every app's storage is its own, named after the binding.
+
+What is Sproutboat's own goes in `sproutboat.settings.jsonc` beside the file, so the Wrangler file stays stock: `account` (the
+team), `name` (the app name, when the Wrangler name is not a valid one: the Cloud takes 3 to 51 characters of `a-z`, `0-9` and `-`), `limits`
+(`memory_mb`, `wall_ms`, `storage_mb`; `cpu_ms` is Wrangler's own `limits.cpu_ms`) and an optional `env.<name>` block.
+`SPROUTBOAT_LIMITS_MEMORY_MB`, `SPROUTBOAT_LIMITS_WALL_MS` and `SPROUTBOAT_LIMITS_STORAGE_MB` override the file.
+
+`compatibility_date` in a Wrangler file is Cloudflare's: an older (or missing) date runs as 2026-11-22, so handlers always get `(request, env, ctx)` and bindings behave like Workers, and a later date is kept. `deploy` and `check` print the date the build uses. Only the legacy `sproutboat.jsonc` keeps Sproutboat's own dates.
+
+A build tool that generates the config (the Cloudflare Vite plugin writes `.wrangler/deploy/config.json`) is followed: `check` and `deploy` read the generated `wrangler.json` from your build output, so run your build first.
+
+The legacy file, `sproutboat.jsonc` (below), still works and prints a deprecation note.
+
+### Legacy `sproutboat.jsonc`
+
+The entry point plus Cloudflare-shaped `env.*` bindings.
 
 ```jsonc
 {

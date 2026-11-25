@@ -78,6 +78,7 @@ test("--config names the project: its directory is the project directory", () =>
   expect(locateProject(undefined, "app/sproutboat.jsonc", cwd)).toEqual({
     directory: resolve(cwd, "app"),
     configPath: resolve(cwd, "app/sproutboat.jsonc"),
+    shadowed: [],
   });
   expect(locateProject("app", "app/sproutboat.jsonc", cwd).directory).toBe(resolve(cwd, "app"));
   expect(() => locateProject("other", "app/sproutboat.jsonc", cwd)).toThrow("pass one");
@@ -87,6 +88,7 @@ test("without --config the project is the directory given, or the current one", 
   expect(locateProject("site", undefined, "/work")).toEqual({
     directory: "/work/site",
     configPath: "/work/site/sproutboat.jsonc",
+    shadowed: [],
   });
   expect(locateProject(undefined, undefined, "/work").configPath).toBe("/work/sproutboat.jsonc");
 });

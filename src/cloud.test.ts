@@ -1,3 +1,4 @@
+import { withoutNotice } from "./test-notice";
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { brotliDecompressSync, gunzipSync } from "node:zlib";
 import { mkdir, mkdtemp, rm, stat, writeFile } from "node:fs/promises";
@@ -656,7 +657,7 @@ describe("the CLI end to end", () => {
     try {
       const env = { SPROUTBOAT_API_URL: cloud.url, SPROUTBOAT_API_TOKEN: FAKE_KEY };
       const deployed = await run(["deploy", project, "--module", join(project, "app.so")], env);
-      expect(deployed.stderr).toBe("");
+      expect(withoutNotice(deployed.stderr)).toBe("");
       expect(deployed.code).toBe(0);
       expect(deployed.stdout).toContain("Created hello");
       expect(deployed.stdout).toContain("https://hello.acme.sproutboat.app");
@@ -678,7 +679,7 @@ describe("the CLI end to end", () => {
     try {
       const env = { SPROUTBOAT_API_URL: cloud.url, SPROUTBOAT_API_TOKEN: FAKE_KEY };
       const listed = await run(["domains", "list", project], env);
-      expect(listed.stderr).toBe("");
+      expect(withoutNotice(listed.stderr)).toBe("");
       expect(listed.code).toBe(0);
       expect(listed.stdout.split("\n").filter(Boolean)).toEqual([
         "built-in  hello.acme.sproutboat.app",
@@ -698,7 +699,7 @@ describe("the CLI end to end", () => {
     try {
       const env = { SPROUTBOAT_API_URL: cloud.url, SPROUTBOAT_API_TOKEN: FAKE_KEY };
       const added = await run(["domains", "add", "app.example.com", project], env);
-      expect(added.stderr).toBe("");
+      expect(withoutNotice(added.stderr)).toBe("");
       expect(added.code).toBe(0);
       expect(added.stdout).toContain("Added app.example.com (waiting for the TXT record)");
       expect(added.stdout).toContain(
@@ -855,7 +856,7 @@ describe("the CLI end to end", () => {
       expect(refused.stderr).toContain("re-run with --force (or -y) to confirm");
       expect(cloud.calls.some((c) => c.method === "DELETE")).toBe(false);
       const gone = await run(["delete", project, "--force"], env);
-      expect(gone.stderr).toBe("");
+      expect(withoutNotice(gone.stderr)).toBe("");
       expect(gone.code).toBe(0);
       expect(gone.stdout).toContain("deleted hello");
       expect(cloud.calls.filter((c) => c.method === "DELETE").map((c) => c.path)).toEqual(["/v1/apps/hello"]);

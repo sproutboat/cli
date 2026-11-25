@@ -5,7 +5,7 @@
  */
 import { copyFileSync, mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { readAssetBlob, type AssetBundle, type ServiceRef } from "./cloud-deploy";
+import { readAssetBlob, type AssetBundle, type ServiceRef, type SpecLimits } from "./cloud-deploy";
 import type { CloudBindings, RecordBinding, RecordQueueConsumer } from "./cloud-bindings";
 
 type PreparedSpec = {
@@ -15,6 +15,7 @@ type PreparedSpec = {
   queue_consumers?: RecordQueueConsumer[];
   services?: ServiceRef[];
   workers_dev?: false;
+  limits?: SpecLimits;
 };
 
 export type PrepareOutInput = {
@@ -27,6 +28,7 @@ export type PrepareOutInput = {
   services: ServiceRef[];
   assets: AssetBundle | undefined;
   workersDev: boolean;
+  limits?: SpecLimits;
 };
 
 export function writePrepareOut(i: PrepareOutInput) {
@@ -39,6 +41,7 @@ export function writePrepareOut(i: PrepareOutInput) {
   if (i.cloudBindings.crons.length > 0) spec.crons = i.cloudBindings.crons;
   if (i.cloudBindings.queue_consumers.length > 0) spec.queue_consumers = i.cloudBindings.queue_consumers;
   if (!i.workersDev) spec.workers_dev = false;
+  if (i.limits && Object.keys(i.limits).length > 0) spec.limits = i.limits;
   if (i.services.length > 0) spec.services = i.services.map(({ binding, service }) => ({ binding, service }));
   writeFileSync(join(i.outDir, "spec.json"), `${JSON.stringify(spec)}\n`);
   let assetFiles = 0;

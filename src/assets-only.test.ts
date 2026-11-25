@@ -1,3 +1,4 @@
+import { withoutNotice } from "./test-notice";
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
@@ -79,7 +80,7 @@ describe("the CLI on an assets-only project", () => {
 
   test("check passes and says the project is assets only", async () => {
     const out = await run(["check"]);
-    expect(out.stderr).toBe("");
+    expect(withoutNotice(out.stderr)).toBe("");
     expect(out.code).toBe(0);
     expect(out.stdout).toContain("static-demo (assets only, native-fetch)");
     expect(await readFile(join(project, ".sproutboat", "assets-only.js"), "utf8")).toBe(assetsOnlySource("ASSETS"));
@@ -93,7 +94,7 @@ describe("the CLI on an assets-only project", () => {
     const cloud = startFakeCloud({ teamKey: true });
     try {
       const out = await run(["deploy"], { SPROUTBOAT_API_URL: cloud.url, SPROUTBOAT_API_TOKEN: FAKE_KEY });
-      expect(out.stderr).toBe("");
+      expect(withoutNotice(out.stderr)).toBe("");
       expect(out.code).toBe(0);
       expect(out.stdout).toContain("Bundling   assets only");
       const [source] = [...cloud.sources.values()];

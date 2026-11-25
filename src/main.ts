@@ -43,11 +43,20 @@ import {
   assetsOnlySource,
   configAccount,
   configMigrationsDir,
-  configWorkersDev,
   describePlatformName,
   resolveWorkersDev,
   parseProjectConfig,
 } from "./account-field";
+import {
+  dialectOf,
+  findRedirect,
+  LEGACY_FILE,
+  loadProjectText,
+  SETTINGS_FILE,
+  type LoadedProject,
+  type Redirect,
+} from "./project-config";
+import { APP_NAME_MAX, WORKERS_COMPAT_FLOOR } from "./wrangler-config";
 import { DATA_ERROR_STATUSES } from "./data-errors";
 import {
   cloudLogout,
@@ -370,30 +379,138 @@ function locate(directory?: string) {
   }
 }
 
+const noticed = new Set<string>();
+
+/** A Wrangler file's older date is Cloudflare's, not Sproutboat's: the build runs it as the floor, and the report says so. */
+function describeDate(declared: string | undefined): string[] {
+  return declared === undefined
+    ? []
+    : [
+        `compat    ${declared} is Cloudflare's date: the build uses ${WORKERS_COMPAT_FLOOR}, so handlers get (request, env, ctx) as on Workers`,
+      ];
+}
+
+/** The limits a deploy sends and where each came from: the file is committed and the overrides are not, so say which won. */
+function describeLimits(limits: Record<string, number | undefined>, sources: Record<string, string>): string[] {
+  const entries = Object.entries(limits).filter(([, value]) => value !== undefined);
+  if (entries.length === 0) return [];
+  return [`limits    ${entries.map(([key, value]) => `${key} ${value} (${sources[key] ?? "config"})`).join(", ")}`];
+}
+
+/** The environment a Wrangler-dialect config resolves: `--env`, else `CLOUDFLARE_ENV` (the flag wins, as in Wrangler). */
+function selectedEnv(): string | undefined {
+  return globalFlags().env ?? (process.env.CLOUDFLARE_ENV || undefined);
+}
+
 /** Management commands must remain usable when a local checkout is incomplete. */
 async function readProjectConfig(directory?: string) {
-  const { directory: projectDirectory, configPath } = locate(directory);
+  const { directory: projectDirectory, configPath, shadowed } = locate(directory);
   let configSource: string;
   try {
     configSource = await readFile(configPath, "utf8");
   } catch {
     fail(
       globalFlags().config === undefined
-        ? `no sproutboat.jsonc found in ${projectDirectory}`
+        ? `no wrangler.jsonc found in ${projectDirectory} (looked for wrangler.json, wrangler.jsonc, wrangler.toml and sproutboat.jsonc here and in the parent directories)`
         : `no config file at ${configPath}`,
     );
   }
-  const parsed = parseProjectConfig(configSource);
-  if (!parsed.ok) fail(parsed.errors.join("\n"));
-  for (const warning of parsed.warnings) console.warn(amber(`! ${warning}`));
+  const configFile = basename(configPath);
+  const env = selectedEnv();
+  let redirect: Redirect | undefined;
+  if (dialectOf(configPath) === "wrangler") {
+    const found = findRedirect(projectDirectory);
+    if (!found.ok) fail(found.error);
+    redirect = found.redirect;
+  }
+  let loaded: LoadedProject;
+  if (redirect === undefined) loaded = loadProjectText(configFile, configSource, { directory: projectDirectory, env });
+  else {
+    const generated = await readFile(redirect.path, "utf8");
+    loaded = loadProjectText(basename(redirect.path), generated, {
+      directory: projectDirectory,
+      env,
+      redirected: { prefix: redirect.prefix },
+    });
+    if (!noticed.has("redirect")) {
+      noticed.add("redirect");
+      console.warn(dim(`using ${redirect.display}, the config your build generated (.wrangler/deploy/config.json)`));
+    }
+  }
+  if (!loaded.ok) fail(loaded.errors.join("\n"));
+  if (loaded.dialect === "legacy" && globalFlags().env !== undefined && command !== "dev")
+    fail(
+      `${command} does not use --env with sproutboat.jsonc: it only selects .dev.vars.<name> and the .env.<name> files for \`dev\`, and this file has no environments. Rename it to wrangler.jsonc to use env.<name>.`,
+    );
+  // A command reads the config more than once; each notice is printed once per process.
+  const say = (key: string, line: string) => {
+    if (noticed.has(key)) return;
+    noticed.add(key);
+    console.warn(amber(line));
+  };
+  for (const warning of loaded.warnings) say(warning, `! ${warning}`);
+  if (loaded.dialect === "legacy")
+    say(
+      "legacy",
+      "! sproutboat.jsonc is deprecated: Sproutboat now reads wrangler.jsonc (the file Cloudflare's tools use). Rename it and rewrite the bindings as Wrangler's; this file keeps working for now.",
+    );
+  else if (shadowed.includes(LEGACY_FILE))
+    say("shadowed", `! using ${configFile}; sproutboat.jsonc is legacy and ignored`);
+  const settings =
+    loaded.dialect === "wrangler" ? await legacyOnly(projectDirectory, loaded.dialect, shadowed) : undefined;
   return {
     directory: projectDirectory,
-    config: parsed.value,
-    account: configAccount(configSource),
-    migrationsDir: configMigrationsDir(configSource),
-    workersDev: resolveWorkersDev(configWorkersDev(configSource)),
-    configFile: basename(configPath),
+    config: loaded.value,
+    account: loaded.account,
+    migrationsDir: loaded.migrationsDir,
+    migrationsDirs: loaded.migrationsDirs,
+    workersDev: resolveWorkersDev(loaded.workersDev),
+    configFile,
+    dialect: loaded.dialect,
+    limits: loaded.limits,
+    limitSources: loaded.limitSources,
+    dev: loaded.dev,
+    env,
+    declaredDate: loaded.declaredDate,
+    ignoredLegacy: settings,
   };
+}
+
+/** `deploy` refuses while an ignored `sproutboat.jsonc` beside the Wrangler file still carries the team, a database folder or
+ * pinned ids: switching files silently could deploy to another team or bind other stores. */
+async function refuseWhileLegacyDiffers(directory?: string): Promise<void> {
+  let location: ReturnType<typeof locate>;
+  try {
+    location = locateProject(directory);
+  } catch {
+    return;
+  }
+  const carried = await legacyOnly(
+    location.directory,
+    basename(location.configPath) === LEGACY_FILE ? "legacy" : "wrangler",
+    location.shadowed,
+  );
+  if (carried === undefined || carried.length === 0) return;
+  fail(
+    `${basename(location.configPath)} wins over sproutboat.jsonc, which still carries ${carried.join(", ")}. Moving to ${basename(location.configPath)} silently could deploy to another team or bind other stores. Put the team in ${SETTINGS_FILE}, drop the pinned ids, then delete sproutboat.jsonc (or deploy with --config sproutboat.jsonc to keep using it).`,
+  );
+}
+
+/** What an ignored legacy `sproutboat.jsonc` beside the winning Wrangler file still carries that the winner does not: the
+ * team, a database folder or a pinned id. A deploy refuses until the user says which file is right. */
+async function legacyOnly(directory: string, dialect: string, shadowed: string[]): Promise<string[] | undefined> {
+  if (dialect !== "wrangler" || !shadowed.includes(LEGACY_FILE)) return undefined;
+  let text: string;
+  try {
+    text = await readFile(resolve(directory, LEGACY_FILE), "utf8");
+  } catch {
+    return undefined;
+  }
+  const carried: string[] = [];
+  if (configAccount(text) !== undefined) carried.push("account");
+  if (configMigrationsDir(text) !== undefined) carried.push("migrations_dir");
+  if (/"(?:kv|d1|r2|queue)_[0-9a-f]{24}"/.test(text)) carried.push("pinned resource ids");
+  return carried;
 }
 
 const entryLabel = (config: { main: string }) => (config.main === ASSETS_ONLY_MAIN ? "assets only" : config.main);
@@ -444,6 +561,7 @@ async function init(args: string[]) {
 async function check(directory?: string) {
   const project = await readProject(directory);
   console.log(ok(`check passed — ${project.config.name} (${entryLabel(project.config)}, native-fetch)`));
+  for (const line of describeDate(project.declaredDate)) console.log(dim(line));
 }
 
 async function types(args: string[]) {
@@ -681,6 +799,8 @@ const PROVISION_FIELDS = [
  * `sproutboat.jsonc`; `--no-provision` leaves an ephemeral deploy-scoped store. */
 async function provisionBindings(directory?: string): Promise<void> {
   const { configPath } = locate(directory);
+  // A Wrangler file is never written to: its bindings name their stores, and nothing is pinned back into it.
+  if (basename(configPath) !== LEGACY_FILE) return;
   let source = await readFile(configPath, "utf8");
   const parsed = parseProjectConfig(source);
   if (!parsed.ok) return; // build() re-reads and reports the config error
@@ -827,6 +947,7 @@ async function whoami(args: string[]) {
 
 async function deploy(args: string[]) {
   const flags = takeFlags(args, DEPLOY_FLAGS);
+  await refuseWhileLegacyDiffers(args.find((arg) => !arg.startsWith("--")));
   if (flags["--prepare-out"] !== undefined) return prepareOut(args, resolve(flags["--prepare-out"]));
   const dryRun = args.includes("--dry-run");
   const { apiUrl: targetUrl, target } = await resolveApiUrl(flags["--api-url"]);
@@ -1193,7 +1314,9 @@ async function prepareOut(args: string[], outDir: string) {
   const cfg = project.config;
   const name = cfg.name;
   if (!CLOUD_PROJECT_RE.test(name))
-    fail(`"${name}" is not a valid Cloud app name (3 to 32 characters: lowercase letters, digits, dashes)`);
+    fail(
+      `"${name}" is not a valid Cloud app name (3 to ${APP_NAME_MAX} characters: lowercase letters, digits, dashes)`,
+    );
   const services = cfg.services ?? [];
   guardSync(() => checkServiceBindings(name, services, cfg.compatibility_date));
   let cloudBindings!: CloudBindings;
@@ -1214,6 +1337,7 @@ async function prepareOut(args: string[], outDir: string) {
     services,
     assets,
     workersDev: project.workersDev.enabled,
+    limits: project.limits,
   });
   console.log(`app       ${bold(name)}`);
   console.log(`route     ${describePlatformName(project.workersDev, project.configFile, undefined)}`);
@@ -1229,7 +1353,9 @@ async function deployCloud(args: string[], apiUrl: string, flags: ReturnType<typ
   const project = await readProjectConfig(directory);
   const name = project.config.name;
   if (!CLOUD_PROJECT_RE.test(name))
-    fail(`"${name}" is not a valid Cloud app name (3 to 32 characters: lowercase letters, digits, dashes)`);
+    fail(
+      `"${name}" is not a valid Cloud app name (3 to ${APP_NAME_MAX} characters: lowercase letters, digits, dashes)`,
+    );
 
   const account = flags["--account"] ?? project.account;
   let session: Awaited<ReturnType<typeof resolveSession>> | undefined;
@@ -1308,6 +1434,8 @@ async function deployCloud(args: string[], apiUrl: string, flags: ReturnType<typ
   console.log(`team      ${team}${session ? "" : dim("  (not resolved)")}`);
   console.log(`endpoint  ${apiUrl}`);
   console.log(`route     ${describePlatformName(workersDev, project.configFile, platformName)}`);
+  for (const line of describeDate(project.declaredDate)) console.log(line);
+  for (const line of describeLimits(project.limits, project.limitSources)) console.log(line);
   if (assets)
     console.log(
       `assets    ${assets.files} files, ${assetBake ? describeAssetBake(assetBake) : "served by the edge (a prebuilt module carries its own)"}`,
@@ -1398,6 +1526,7 @@ async function deployCloud(args: string[], apiUrl: string, flags: ReturnType<typ
           services,
           cloudBindings,
           compatibilityDate: cfg.compatibility_date,
+          limits: project.limits,
           secrets: secretValues,
           hosts,
           unroute,
@@ -1437,6 +1566,7 @@ async function deployCloud(args: string[], apiUrl: string, flags: ReturnType<typ
         services,
         cloudBindings,
         compatibilityDate: cfg.compatibility_date,
+        limits: project.limits,
         secrets: secretValues,
       },
       io,
@@ -2082,7 +2212,10 @@ async function d1Contents(args: string[]) {
 
   async function d1Run() {
     const binding = pickBinding(project.config, database!);
-    const dir = resolve(project.directory, project.migrationsDir ?? DEFAULT_MIGRATIONS_DIR);
+    const dir = resolve(
+      project.directory,
+      project.migrationsDirs[binding.binding] ?? project.migrationsDir ?? DEFAULT_MIGRATIONS_DIR,
+    );
     if (sub === "create") {
       await createMigration(dir, message!, io);
       return;
@@ -2635,6 +2768,9 @@ function complete(shell?: string): void {
   console.log(script);
 }
 
+/** Commands that never read a project config: --env has nothing to select there. */
+const ENV_FREE_COMMANDS = new Set(["init", "toolchain", "login", "logout", "whoami", "profile", "complete"]);
+
 const GLOBAL_USAGE =
   "<command> [-c, --config <file>] [--cwd <dir>] [-e, --env <name>] [--env-file <file>]... [--profile <name>] [--api-url <url>] [-v, --version]";
 const parsedArgv = extractGlobalFlags(process.argv.slice(2));
@@ -2657,11 +2793,8 @@ if (command === undefined || command === "help" || command === "-h" || command =
 if (args.includes("-h") || args.includes("--help")) commandHelp(command);
 
 // A flag a command cannot honour is an error, not a quiet no-op: `deploy --env staging` must not deploy.
-if (globals.env !== undefined && command !== "dev")
-  usageError(
-    `${command} does not use --env: it only selects .dev.vars.<name> and the .env.<name> files for \`dev\`, and sproutboat.jsonc has no environments`,
-    GLOBAL_USAGE,
-  );
+if (globals.env !== undefined && ENV_FREE_COMMANDS.has(command))
+  usageError(`${command} does not use --env: it has no project config to select an environment in`, GLOBAL_USAGE);
 if (globals.envFiles.length > 0 && command !== "dev" && command !== "run")
   usageError(`${command} does not read env files; --env-file is for \`dev\` and \`run\``, GLOBAL_USAGE);
 if (globals.profile !== undefined && !PROFILE_NAME.test(globals.profile))

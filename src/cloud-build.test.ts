@@ -1,3 +1,4 @@
+import { withoutNotice } from "./test-notice";
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { createHash } from "node:crypto";
 import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
@@ -527,7 +528,7 @@ describe("the CLI end to end, building from source", () => {
     const cloud = startFakeCloud({ teamKey: true });
     try {
       const out = await run(["deploy", project], { SPROUTBOAT_API_URL: cloud.url, SPROUTBOAT_API_TOKEN: FAKE_KEY });
-      expect(out.stderr).toBe("");
+      expect(withoutNotice(out.stderr)).toBe("");
       expect(out.code).toBe(0);
       expect(out.stdout).toMatch(/Bundling {3}src\/index\.js \(\d+ KiB\)/);
       expect(out.stdout).toMatch(/Uploading {2}source [0-9a-f]{12} \(\d+ KiB\)/);

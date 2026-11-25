@@ -101,7 +101,7 @@ export function printDeployReport(
   const rows = bindingRows(config);
   console.log(bold("Bindings the handler will see"));
   if (rows.length === 0) {
-    console.log(dim("  (none — add vars / kv_namespaces / secrets / … to sproutboat.jsonc)"));
+    console.log(dim("  (none — add vars / kv_namespaces / secrets / … to wrangler.jsonc)"));
   } else {
     console.log(table(["Binding", "Type", "Detail"], rows));
   }
