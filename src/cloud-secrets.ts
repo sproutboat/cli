@@ -2,12 +2,13 @@
  * Secrets on the Sproutboat Cloud, Wrangler style: `secrets put/list/delete` act on the deployed app by name, and a
  * deploy never wipes them. The Cloud routes: GET /v1/apps/<app>/secrets, PUT and DELETE /v1/apps/<app>/secrets/<NAME>.
  */
+import { BINDING_NAME } from "./config";
 import { readEnvFile } from "./env-file";
 import { CloudError } from "./cloud";
 import { makeCall, type CloudCredentials } from "./cloud-deploy";
 import { isSafeInteger, isString, jsonObject, type JsonObject } from "./json";
 
-export const SECRET_NAME_RE = /^[A-Z][A-Z0-9_]*$/;
+export const SECRET_NAME_RE = BINDING_NAME;
 
 type SecretAction = "list" | "write";
 const PERMISSION = { list: "secret:list", write: "secret:write" } as const satisfies Record<SecretAction, string>;
@@ -34,6 +35,33 @@ async function secretCall(
     throw new CloudError(notDeployed(project));
   }
   return result;
+}
+
+/**
+ * The names a deploy binds besides the config's: what the app already stores. A new app has none, and a key without `secret:list` cannot see them
+ * (the deploy goes on with the declared ones and says so), so neither stops a deploy.
+ */
+export async function storedSecretNames(
+  credentials: CloudCredentials,
+  project: string,
+): Promise<{ names: string[]; warning?: string }> {
+  try {
+    const result = await makeCall(credentials)({ method: "GET", path: `/v1/apps/${project}/secrets`, ok: [403, 404] });
+    if (result.status === 404) return { names: [] };
+    if (result.status === 403)
+      return {
+        names: [],
+        warning:
+          "this key lacks secret:list, so stored secrets the config does not declare are not bound by this deploy; declare them in the config or use a key that has it",
+      };
+    const names = result.body?.secrets;
+    return { names: (Array.isArray(names) ? names.filter(isString) : []).filter((name) => SECRET_NAME_RE.test(name)) };
+  } catch (error) {
+    return {
+      names: [],
+      warning: `could not list the app's stored secrets (${error instanceof Error ? error.message : String(error)}); only the declared ones are bound`,
+    };
+  }
 }
 
 export async function listCloudSecrets(credentials: CloudCredentials, project: string): Promise<string[]> {
@@ -132,7 +160,9 @@ export async function readSecretsFile(path: string): Promise<{ values: Record<st
     else values[entry.key] = entry.value;
   }
   if (bad.length > 0)
-    throw new CloudError(`${path}: secret names must be UPPER_SNAKE_CASE; not valid: ${bad.join(", ")}`);
+    throw new CloudError(
+      `${path}: secret names must be JavaScript identifiers (letters, digits, _); not valid: ${bad.join(", ")}`,
+    );
   const warnings = [...parsed.warnings];
   if (skipped.length > 0) warnings.push(`${path}: not sent, empty value: ${skipped.join(", ")}`);
   return { values, warnings };

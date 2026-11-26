@@ -121,9 +121,11 @@ export function d1Bindings(config: SproutboatConfig): D1Binding[] {
   );
 }
 
-export function pickBinding(config: SproutboatConfig, database: string): D1Binding {
+/** `<database>` is a binding name, or the `database_name` of a wrangler.jsonc entry (Wrangler's argument). */
+export function pickBinding(config: SproutboatConfig, database: string, names: Record<string, string> = {}): D1Binding {
   const all = d1Bindings(config);
-  const found = all.find((entry) => entry.binding === database);
+  const found =
+    all.find((entry) => entry.binding === database) ?? all.find((entry) => entry.binding === names[database]);
   if (found) return found;
   throw new CloudError(
     all.length === 0

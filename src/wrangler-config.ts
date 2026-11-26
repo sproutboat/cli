@@ -29,6 +29,8 @@ export type WranglerExtras = {
   cpuMs?: number;
   /** Per-database `migrations_dir`, by binding. */
   migrationsDirs: Record<string, string>;
+  /** `database_name` of each d1_databases entry, to its binding: `d1 migrations apply <database_name>` works as it does in Wrangler. */
+  d1Names: Record<string, string>;
   /** `dev.port` and `dev.ip`, the defaults of `sproutboat dev`. */
   dev?: { port?: number; ip?: string };
   /** The file's own `compatibility_date` when it was older than the floor and so not the one the build uses. */
@@ -416,7 +418,7 @@ export function convertWrangler(raw: Rec, options: WranglerOptions = {}): Wrangl
   const file = options.file ?? "wrangler.jsonc";
   const ctx: Ctx = { file, errors: [], warnings: new Set(), at: "" };
   const { merged: cfg, envLabel } = resolveEnvironment(raw, options.env, ctx);
-  const extras: WranglerExtras = { migrationsDirs: {} };
+  const extras: WranglerExtras = { migrationsDirs: {}, d1Names: {} };
   if (envLabel !== undefined) extras.env = envLabel;
 
   const under = (path: string): string => {
@@ -596,6 +598,8 @@ export function convertWrangler(raw: Rec, options: WranglerOptions = {}): Wrangl
       if (isStr(entry[idKey]) && entry[idKey] !== "") idNotes.push(`${field}.${binding}`);
       if (field === "d1_databases" && isStr(entry.migrations_dir) && entry.migrations_dir !== "")
         extras.migrationsDirs[binding] = entry.migrations_dir;
+      if (field === "d1_databases" && isStr(entry.database_name) && entry.database_name !== "")
+        extras.d1Names[entry.database_name] = binding;
       out.push(binding);
     }
     return out;

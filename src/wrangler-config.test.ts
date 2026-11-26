@@ -295,3 +295,11 @@ describe("limits, dev and workers_dev", () => {
     expect(errors(`{ ${base}, "limits": { "cpu_ms": 1 } }`)).toContain("10 to 600000");
   });
 });
+
+test("database_name of a d1_databases entry maps to its binding, for `d1 migrations apply <database_name>`", () => {
+  const r = ok(
+    `{ ${base}, "d1_databases": [{ "binding": "AuthDb", "database_name": "auth-db", "database_id": "x" }] }`,
+  );
+  expect(r.extras.d1Names).toEqual({ "auth-db": "AuthDb" });
+  expect(r.value.d1_databases).toEqual(["AuthDb"]);
+});

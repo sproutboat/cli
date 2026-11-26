@@ -131,8 +131,8 @@ function undeclaredWarnings(declared: string[] | undefined, names: string[]) {
     .map((name) => ({
       code: "secret-not-declared",
       name,
-      message: `${name} is stored, but this app does not declare it, so the Worker's env does not carry it`,
-      fix: `add "${name}" to "secrets" in sproutboat.jsonc (secrets: ["${name}"]), then run \`sproutboat deploy\``,
+      message: `${name} is stored, but the running version does not bind it yet, so the Worker's env does not carry it`,
+      fix: `run \`sproutboat deploy\`: it binds every stored secret, so "${name}" need not be listed under "secrets" in the config`,
     }));
 }
 

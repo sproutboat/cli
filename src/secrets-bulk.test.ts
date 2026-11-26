@@ -14,14 +14,14 @@ test(".env: assignments set, empty values are skipped with a warning naming the 
 });
 
 test("bad input is refused by name, never by value", () => {
-  expect(() => parseBulkSecrets(`{ "lower": "s3cret-value" }`, "f.json")).toThrow("not valid: lower");
+  expect(() => parseBulkSecrets(`{ "bad-name": "s3cret-value" }`, "f.json")).toThrow("not valid: bad-name");
   expect(() => parseBulkSecrets(`{ "A_B": 5 }`, "f.json")).toThrow("A_B must be a non-empty string");
   expect(() => parseBulkSecrets(`{ "A_B": "" }`, "f.json")).toThrow("A_B must be a non-empty string");
   expect(() => parseBulkSecrets(`{ nope`, "f.json")).toThrow("not valid JSON");
   expect(() => parseBulkSecrets(`   `, "f")).toThrow("no secrets to set or delete");
-  expect(() => parseBulkSecrets(`lower_name=x`, "f.env")).toThrow("not valid: lower_name");
+  expect(() => parseBulkSecrets(`bad-name=x`, "f.env")).toThrow("not valid: bad-name");
   try {
-    parseBulkSecrets(`{ "lower": "s3cret-value" }`, "f.json");
+    parseBulkSecrets(`{ "bad-name": "s3cret-value" }`, "f.json");
   } catch (error) {
     expect(String(error)).not.toContain("s3cret-value");
   }
