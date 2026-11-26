@@ -10,9 +10,9 @@ maintained going forward by the `release` skill.
 
 ## Unreleased
 
-## [0.65.0] - 2026-11-25
+## [0.66.0] - 2026-11-26
 
-Runtime and toolchain pins unchanged: `@sproutboat/runtime` ^0.49.2 and `@sproutboat/toolchain` ^0.29.1. This release reads `wrangler.jsonc`, `wrangler.json` and `wrangler.toml` as written, gives a Wrangler file Cloudflare's `compatibility_date` meaning, and allows app names up to 51 characters (the Cloud must also be updated for names over 32).
+Pins: `@sproutboat/runtime` ^0.50.0, `@sproutboat/config` ^0.7.0, `@sproutboat/assets` ^0.4.0, `@sproutboat/wire` 0.23.1 and `@sproutboat/toolchain` ^0.29.1. This release is Cloudflare compatibility wave 1: every stored secret is bound at deploy, `dev` serves assets first like the edge, any JavaScript identifier is a binding name, `d1 migrations apply` takes a `database_name`, and the source check no longer trips on strings or caught imports.
 
 ### Added
 
@@ -21,7 +21,17 @@ Runtime and toolchain pins unchanged: `@sproutboat/runtime` ^0.49.2 and `@sprout
 - **`sproutboat dev` serves static assets like the edge**: a file that matches is answered before the Worker runs (unless `run_sprout_first` names the path), with `_redirects`, `_headers` and `not_found_handling` for page navigations, so a Worker that never calls `env.ASSETS` gets its folder.
 - **`.assetsignore`** at the asset root is honoured (gitignore style): an Astro build's `_worker.js` is no longer uploaded as a public file.
 - **`d1 migrations apply <database_name>`** takes the `database_name` of a wrangler.jsonc entry as well as the binding name.
+
+### Fixed
+
 - The source check reads code, not text: `import('node:buffer')` in an SDK's error message, a script written in a template, a caught `import(`node:sqlite`)` and `"Buffer" in globalThis&&` no longer fail `check`. A bundle's renamed entry exports (`export{x as D}`) no longer collide with its own names at compile.
+
+## [0.65.0] - 2026-11-25
+
+Runtime and toolchain pins unchanged: `@sproutboat/runtime` ^0.49.2 and `@sproutboat/toolchain` ^0.29.1. This release reads `wrangler.jsonc`, `wrangler.json` and `wrangler.toml` as written, gives a Wrangler file Cloudflare's `compatibility_date` meaning, and allows app names up to 51 characters (the Cloud must also be updated for names over 32).
+
+### Added
+
 - **`wrangler.jsonc`, `wrangler.json` and `wrangler.toml` are the project file.** A Cloudflare project deploys unchanged: `name`, `main` (any path), `compatibility_date`, `vars` (any JSON value), `kv_namespaces`, `d1_databases` (with per-database `migrations_dir`), `r2_buckets`, `durable_objects` with `migrations`, `queues` as `producers` and `consumers` (a queue is consumed only when listed under `consumers`), `triggers.crons`, `services`, `assets`, `ratelimits`, `secrets.required`, `limits.cpu_ms`, `workers_dev` and `env.<name>`. `--env` and `CLOUDFLARE_ENV` select an environment. Cloudflare products Sproutboat does not run load with one warning each; harmless fields are silent. All 41 files of `cloudflare/templates` are in the tests.
 - **`sproutboat.settings.jsonc`** holds what is Sproutboat's: `account`, `name`, `limits` and an `env` block. `deploy` sends `spec.limits` and prints where each value came from; `SPROUTBOAT_LIMITS_MEMORY_MB`, `SPROUTBOAT_LIMITS_WALL_MS` and `SPROUTBOAT_LIMITS_STORAGE_MB` override it.
 - **A Wrangler file's `compatibility_date` is Cloudflare's.** An older or missing date runs as 2026-11-22, so a template with a 2025 date gets `(request, env, ctx)` handlers and Promise-returning bindings like on Workers; a later date is kept, and `check` and `deploy` say which date the build uses. The legacy `sproutboat.jsonc` keeps Sproutboat's own dates.
@@ -2015,7 +2025,8 @@ its own package.
 - Renamed the package to `sproutboat` (was `@sproutboat/cli`); dropped the
   `sprout` bin alias in favour of a user-defined shell alias.
 
-[Unreleased]: https://github.com/sproutboat/cli/compare/v0.65.0...HEAD
+[Unreleased]: https://github.com/sproutboat/cli/compare/v0.66.0...HEAD
+[0.66.0]: https://github.com/sproutboat/cli/compare/v0.65.0...v0.66.0
 [0.65.0]: https://github.com/sproutboat/cli/compare/v0.64.0...v0.65.0
 [0.64.0]: https://github.com/sproutboat/cli/compare/v0.63.0...v0.64.0
 [0.63.0]: https://github.com/sproutboat/cli/compare/v0.62.0...v0.63.0
