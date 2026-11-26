@@ -452,8 +452,68 @@ function createHmac() { unavailable(); }
 function getCiphers() { return []; }
 function getHashes() { return []; }
 function getCurves() { return []; }
-export { webcrypto, randomBytes, randomUUID, createHash, createHmac, getCiphers, getHashes, getCurves };
-export default { webcrypto, randomBytes, randomUUID, createHash, createHmac, getCiphers, getHashes, getCurves, getRandomValues: (a) => webcrypto.getRandomValues(a), subtle: webcrypto.subtle };
+function invalidArg(name, value) {
+  const e = new TypeError('The "' + name + '" argument must be of type string or an instance of Buffer, TypedArray, or DataView.');
+  e.code = "ERR_INVALID_ARG_TYPE";
+  return e;
+}
+function bytesOf(name, value) {
+  if (typeof value === "string") return new TextEncoder().encode(value);
+  if (value instanceof ArrayBuffer) return new Uint8Array(value);
+  if (ArrayBuffer.isView(value)) return new Uint8Array(value.buffer, value.byteOffset, value.byteLength);
+  throw invalidArg(name, value);
+}
+function timingSafeEqual(a, b) {
+  if (typeof a === "string" || typeof b === "string" || !(a instanceof ArrayBuffer || ArrayBuffer.isView(a)) || !(b instanceof ArrayBuffer || ArrayBuffer.isView(b)))
+    throw invalidArg(typeof a === "string" || !(a instanceof ArrayBuffer || ArrayBuffer.isView(a)) ? "buf1" : "buf2", a);
+  const x = bytesOf("buf1", a), y = bytesOf("buf2", b);
+  if (x.byteLength !== y.byteLength) {
+    const e = new RangeError("Input buffers must have the same byte length");
+    e.code = "ERR_CRYPTO_TIMING_SAFE_EQUAL_LENGTH";
+    throw e;
+  }
+  let difference = 0;
+  for (let i = 0; i < x.length; i++) difference |= x[i] ^ y[i];
+  return difference === 0;
+}
+// scrypt is native (the runtime's C, the same code as crypto.scryptVerify). The runtime holds its table to a few MiB by recomputing blocks (about 1.75 times the time at Better Auth's N 16384, r 16, which needs 32 MiB plainly) and throws a RangeError for parameters past what the worker can spare.
+function scryptParams(options) {
+  const o = options == null ? {} : options;
+  const N = o.N ?? o.cost ?? 16384, r = o.r ?? o.blockSize ?? 8, p = o.p ?? o.parallelization ?? 1, maxmem = o.maxmem ?? 32 * 1024 * 1024;
+  // OpenSSL's rules: N a power of two below 2^(16 r), r and p at least 1, p * r below 2^30.
+  if (!Number.isInteger(N) || N < 2 || !Number.isInteger(Math.log2(N)) || !Number.isInteger(r) || r < 1 || !Number.isInteger(p) || p < 1 || (r < 4 && N >= 2 ** (16 * r)) || p > (2 ** 30 - 1) / r) {
+    const e = new RangeError("Invalid scrypt params");
+    e.code = "ERR_CRYPTO_INVALID_SCRYPT_PARAMS";
+    throw e;
+  }
+  if (128 * r * (p + N + 2) > maxmem) {
+    const e = new RangeError("Invalid scrypt params: memory limit exceeded");
+    e.code = "ERR_CRYPTO_INVALID_SCRYPT_PARAMS";
+    throw e;
+  }
+  return { N, r, p };
+}
+function scryptSync(password, salt, keylen, options) {
+  const pw = bytesOf("password", password), sl = bytesOf("salt", salt);
+  if (!Number.isInteger(keylen) || keylen < 0) throw new RangeError('The "keylen" argument must be a non-negative integer');
+  const { N, r, p } = scryptParams(options);
+  if (typeof globalThis.__sbScrypt !== "function") throw new Error("crypto.scrypt needs a newer Sproutboat runtime generation");
+  const bytes = new Uint8Array(globalThis.__sbScrypt(pw, sl, N, r, p, keylen));
+  return typeof globalThis.Buffer === "function" && typeof globalThis.Buffer.from === "function" ? globalThis.Buffer.from(bytes.buffer, bytes.byteOffset, bytes.byteLength) : bytes;
+}
+function scrypt(password, salt, keylen, options, callback) {
+  if (typeof options === "function") { callback = options; options = undefined; }
+  if (typeof callback !== "function") {
+    const e = new TypeError('The "callback" argument must be of type function.');
+    e.code = "ERR_INVALID_ARG_TYPE";
+    throw e;
+  }
+  let result, failure;
+  try { result = scryptSync(password, salt, keylen, options); } catch (error) { failure = error; }
+  Promise.resolve().then(() => (failure ? callback(failure) : callback(null, result)));
+}
+export { webcrypto, randomBytes, randomUUID, createHash, createHmac, getCiphers, getHashes, getCurves, timingSafeEqual, scrypt, scryptSync };
+export default { webcrypto, randomBytes, randomUUID, createHash, createHmac, getCiphers, getHashes, getCurves, timingSafeEqual, scrypt, scryptSync, getRandomValues: (a) => webcrypto.getRandomValues(a), subtle: webcrypto.subtle };
 `;
 
 /** Replaces Bun's browser polyfills, in a bundle at the sockets date or later (see bundle.ts). */
