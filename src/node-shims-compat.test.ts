@@ -164,6 +164,16 @@ test("node:crypto shim: timingSafeEqual and scrypt behave like Node's (scrypt ov
       code: "ERR_CRYPTO_INVALID_SCRYPT_PARAMS",
     });
     assert.throws(() => shim.scryptSync("pw", "s", 16, { N: 1000 }), { code: "ERR_CRYPTO_INVALID_SCRYPT_PARAMS" });
+    // Node's other parameter rules (OpenSSL's): N below 2^(16 r), N a power of two beyond 32 bits, p * r below 2^30. Both refuse before any work.
+    for (const bad of [
+      { N: 65536, r: 1 },
+      { N: 2 ** 31 + 1, r: 8 },
+      { N: 16, r: 8, p: 2 ** 30 },
+    ]) {
+      const options = { ...bad, maxmem: Number.MAX_SAFE_INTEGER };
+      assert.throws(() => realCrypto.scryptSync("pw", "s", 16, options), { code: "ERR_CRYPTO_INVALID_SCRYPT_PARAMS" });
+      assert.throws(() => shim.scryptSync("pw", "s", 16, options), { code: "ERR_CRYPTO_INVALID_SCRYPT_PARAMS" });
+    }
     delete globals.__sbScrypt;
     assert.throws(() => shim.scryptSync("pw", "s", 16), /newer Sproutboat runtime/);
   } finally {

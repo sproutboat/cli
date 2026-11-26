@@ -476,11 +476,12 @@ function timingSafeEqual(a, b) {
   for (let i = 0; i < x.length; i++) difference |= x[i] ^ y[i];
   return difference === 0;
 }
-// scrypt is native (the runtime's C, the same code as crypto.scryptVerify): memory is 128 * N * r bytes of the worker, so a Better Auth hash (N 16384, r 16) takes 32 MiB.
+// scrypt is native (the runtime's C, the same code as crypto.scryptVerify). The runtime holds its table to a few MiB by recomputing blocks (about 1.75 times the time at Better Auth's N 16384, r 16, which needs 32 MiB plainly) and throws a RangeError for parameters past what the worker can spare.
 function scryptParams(options) {
   const o = options == null ? {} : options;
   const N = o.N ?? o.cost ?? 16384, r = o.r ?? o.blockSize ?? 8, p = o.p ?? o.parallelization ?? 1, maxmem = o.maxmem ?? 32 * 1024 * 1024;
-  if (!Number.isInteger(N) || N < 2 || (N & (N - 1)) !== 0 || !Number.isInteger(r) || r < 1 || !Number.isInteger(p) || p < 1) {
+  // OpenSSL's rules: N a power of two below 2^(16 r), r and p at least 1, p * r below 2^30.
+  if (!Number.isInteger(N) || N < 2 || !Number.isInteger(Math.log2(N)) || !Number.isInteger(r) || r < 1 || !Number.isInteger(p) || p < 1 || (r < 4 && N >= 2 ** (16 * r)) || p > (2 ** 30 - 1) / r) {
     const e = new RangeError("Invalid scrypt params");
     e.code = "ERR_CRYPTO_INVALID_SCRYPT_PARAMS";
     throw e;
