@@ -10,6 +10,14 @@ maintained going forward by the `release` skill.
 
 ## Unreleased
 
+## [0.67.0] - 2026-11-26
+
+Pins: `@sproutboat/runtime` ^0.51.0, `@sproutboat/toolchain` ^0.30.0 and `@sproutboat/wire` 0.23.2 (`@sproutboat/config` ^0.7.0 and `@sproutboat/assets` ^0.4.0 unchanged). This release is Cloudflare compatibility wave 2: `node:crypto` has `scrypt`, `scryptSync` and `timingSafeEqual`, so Better Auth and OpenAuth bundle and hash passwords in milliseconds on the Cloud.
+
+### Added
+
+- **`node:crypto` `scrypt`, `scryptSync` and `timingSafeEqual`.** Better Auth and OpenAuth import them; the shim had none, so the bundle failed (or, with a pure-JS scrypt aliased in, one password hash took 27 s). `scryptSync` and `scrypt` check `N`, `r`, `p` and `maxmem` the way OpenSSL does and run the runtime's native scrypt; `timingSafeEqual` throws Node's errors (`ERR_CRYPTO_TIMING_SAFE_EQUAL_LENGTH`, `ERR_INVALID_ARG_TYPE`). Needs `@sproutboat/runtime` 0.51.0 and a Cloud on the compat wave 2 generation.
+
 ## [0.66.0] - 2026-11-26
 
 Pins: `@sproutboat/runtime` ^0.50.0, `@sproutboat/config` ^0.7.0, `@sproutboat/assets` ^0.4.0, `@sproutboat/wire` 0.23.1 and `@sproutboat/toolchain` ^0.29.1. This release is Cloudflare compatibility wave 1: every stored secret is bound at deploy, `dev` serves assets first like the edge, any JavaScript identifier is a binding name, `d1 migrations apply` takes a `database_name`, and the source check no longer trips on strings or caught imports.
@@ -2025,7 +2033,8 @@ its own package.
 - Renamed the package to `sproutboat` (was `@sproutboat/cli`); dropped the
   `sprout` bin alias in favour of a user-defined shell alias.
 
-[Unreleased]: https://github.com/sproutboat/cli/compare/v0.66.0...HEAD
+[Unreleased]: https://github.com/sproutboat/cli/compare/v0.67.0...HEAD
+[0.67.0]: https://github.com/sproutboat/cli/compare/v0.66.0...v0.67.0
 [0.66.0]: https://github.com/sproutboat/cli/compare/v0.65.0...v0.66.0
 [0.65.0]: https://github.com/sproutboat/cli/compare/v0.64.0...v0.65.0
 [0.64.0]: https://github.com/sproutboat/cli/compare/v0.63.0...v0.64.0
