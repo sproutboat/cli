@@ -10,6 +10,22 @@ maintained going forward by the `release` skill.
 
 ## Unreleased
 
+## [0.68.0] - 2026-11-27
+
+Pins: `@sproutboat/runtime` ^0.51.4 and `@sproutboat/toolchain` ^0.31.0 (`@sproutboat/wire` 0.23.2, `@sproutboat/config` ^0.7.0 and `@sproutboat/assets` ^0.4.0 unchanged). Release it together with the Cloud generation swap to Porffor alpha 26: the runtime and toolchain pins need no other Cloud change, but apps compiled by this CLI as standalone executables use alpha 26.
+
+### Changed
+
+- **Porffor alpha 26.** Standalone builds (`--standalone`, `SPROUTBOAT_PORFFOR_CHANNEL`) use Porffor alpha 26 from `@sproutboat/toolchain` 0.31.0; `alpha-26` is now the default and only channel, and `alpha-25` is an error that says it is no longer supported. The toolchain refuses `node:ffi` in compiled app code (raw native access).
+
+### Performance
+
+- **SHA-256 is about five times faster on x86-64 for large inputs** (`@sproutboat/runtime` 0.51.4). `crypto.subtle.digest` and HMAC-SHA-256 use the CPU's SHA extensions when it has them and keep the reference block everywhere else; the result bytes do not change. A Worker hashing 20 blocks of 64 KiB per request went from 4.3 ms to 0.86 ms on a 4-vCPU EPYC host.
+
+### Fixed
+
+- **A sort or temporary table in SQLite no longer fails with `unable to open database file`** (`@sproutboat/runtime` 0.51.3). Embedded SQLite keeps temporary tables and statement journals in memory under a heap limit, and a failed open names the file. Needs a Cloud on the alpha 26 generation.
+
 ## [0.67.1] - 2026-11-27
 
 Pins: `@sproutboat/runtime` ^0.51.2 (`@sproutboat/toolchain` ^0.30.0, `@sproutboat/wire` 0.23.2, `@sproutboat/config` ^0.7.0 and `@sproutboat/assets` ^0.4.0 unchanged).
@@ -2040,7 +2056,9 @@ its own package.
 - Renamed the package to `sproutboat` (was `@sproutboat/cli`); dropped the
   `sprout` bin alias in favour of a user-defined shell alias.
 
-[Unreleased]: https://github.com/sproutboat/cli/compare/v0.67.0...HEAD
+[Unreleased]: https://github.com/sproutboat/cli/compare/v0.68.0...HEAD
+[0.68.0]: https://github.com/sproutboat/cli/compare/v0.67.1...v0.68.0
+[0.67.1]: https://github.com/sproutboat/cli/compare/v0.67.0...v0.67.1
 [0.67.0]: https://github.com/sproutboat/cli/compare/v0.66.0...v0.67.0
 [0.66.0]: https://github.com/sproutboat/cli/compare/v0.65.0...v0.66.0
 [0.65.0]: https://github.com/sproutboat/cli/compare/v0.64.0...v0.65.0
