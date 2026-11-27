@@ -73,7 +73,7 @@
     "@sproutboat/assets": "^0.4.0",
     "@sproutboat/config": "^0.7.0",
     "@sproutboat/runtime": "^0.51.2",
-    "@sproutboat/toolchain": "^0.30.0",
+    "@sproutboat/toolchain": "^0.31.0",
     "@sproutboat/wire": "0.23.2",
     "jsonc-parser": "3.3.1",
     "smol-toml": "1.4.2"

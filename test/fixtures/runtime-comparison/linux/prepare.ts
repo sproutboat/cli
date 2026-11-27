@@ -7,7 +7,7 @@ import { bundleHandler } from "../../../../src/bundle";
 import {
   CURRENT_ALPHA,
   ensurePorfforA21,
-  PORFFOR_A25_COMMIT_FULL as PORFFOR_COMMIT_FULL,
+  PORFFOR_A26_COMMIT_FULL as PORFFOR_COMMIT_FULL,
 } from "@sproutboat/toolchain/a21";
 import { corpus } from "../fixtures/corpus";
 import { preludePath } from "../../../../src/wrap";
