@@ -10,6 +10,14 @@ maintained going forward by the `release` skill.
 
 ## Unreleased
 
+## [0.67.1] - 2026-11-27
+
+Pins: `@sproutboat/runtime` ^0.51.2 (`@sproutboat/toolchain` ^0.30.0, `@sproutboat/wire` 0.23.2, `@sproutboat/config` ^0.7.0 and `@sproutboat/assets` ^0.4.0 unchanged).
+
+### Fixed
+
+- **The arrow form of a Worker handler passes `check` and `deploy`.** `export default { fetch: (req, env, ctx) => ... }` is valid on Cloudflare and was rejected by the source check; `@sproutboat/runtime` 0.51.2 accepts it, and this release picks it up.
+
 ## [0.67.0] - 2026-11-26
 
 Pins: `@sproutboat/runtime` ^0.51.0, `@sproutboat/toolchain` ^0.30.0 and `@sproutboat/wire` 0.23.2 (`@sproutboat/config` ^0.7.0 and `@sproutboat/assets` ^0.4.0 unchanged). This release is Cloudflare compatibility wave 2: `node:crypto` has `scrypt`, `scryptSync` and `timingSafeEqual`, so Better Auth and OpenAuth bundle and hash passwords in milliseconds on the Cloud.
@@ -1211,7 +1219,6 @@ toolchain 0.11.0, runtime 0.21.1, wire 0.14.
   `qs` 6.16.0 parses and serializes nested query data in a native HTTP probe.
   Standard `itty-router` 5.0.24 `Router` still hits a labelled-break compiler
   error. String iteration still splits astral characters into UTF-16 halves.
-
 
 ## [0.15.0] - 2026-10-05
 

@@ -9,6 +9,6 @@
     "test": "bun harness.ts"
   },
   "devDependencies": {
-    "sproutboat": "0.67.0"
+    "sproutboat": "0.67.1"
   }
 }
