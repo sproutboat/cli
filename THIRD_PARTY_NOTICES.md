@@ -6,7 +6,7 @@ to its upstream source.
 
 | Component | Version or revision | Distribution role | License | Source |
 | --- | --- | --- | --- | --- |
-| Porffor | `c9af40c8c6913e04d491412ae9fe0f34b97b51df` (alpha 25) with the toolchain's patch series | Patched tree vendored by `@sproutboat/toolchain`, unpacked on first application build | MIT | https://github.com/CanadaHonk/porffor |
+| Porffor | `8037e56d2b5cdb42cc57625a32766e49b63ce90b` (alpha 26) with the toolchain's patch series | Patched tree vendored by `@sproutboat/toolchain`, unpacked on first application build | MIT | https://github.com/CanadaHonk/porffor |
 | Zig | `0.16.0` | Acquired cross-compiler | MIT | https://ziglang.org |
 | uWebSockets and uSockets | `360c276d609d59af56ae6932adb95154ace9f15f` | Embedded source and static archive | Apache-2.0 | https://github.com/uNetworking/uWebSockets |
 | SQLite | `3.50.4` | Acquired for standalone builds | Public domain | https://sqlite.org |
