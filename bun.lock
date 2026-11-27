@@ -8,7 +8,7 @@
         "@sproutboat/artifact": "^0.3.0",
         "@sproutboat/assets": "^0.4.0",
         "@sproutboat/config": "^0.7.0",
-        "@sproutboat/runtime": "^0.51.2",
+        "@sproutboat/runtime": "^0.51.4",
         "@sproutboat/toolchain": "^0.31.0",
         "@sproutboat/wire": "0.23.2",
         "jsonc-parser": "3.3.1",
@@ -25,10 +25,10 @@
         "wrangler": "4.161.0",
       },
       "optionalDependencies": {
-        "@sproutboat/cli-darwin-arm64": "0.67.1",
-        "@sproutboat/cli-darwin-x64": "0.67.1",
-        "@sproutboat/cli-linux-arm64": "0.67.1",
-        "@sproutboat/cli-linux-x64": "0.67.1",
+        "@sproutboat/cli-darwin-arm64": "0.68.0",
+        "@sproutboat/cli-darwin-x64": "0.68.0",
+        "@sproutboat/cli-linux-arm64": "0.68.0",
+        "@sproutboat/cli-linux-x64": "0.68.0",
       },
     },
   },
@@ -257,7 +257,7 @@
 
     "@sproutboat/config": ["@sproutboat/config@0.7.0", "", {}, "sha512-FWxco9bzIDRUjnbIEvbEh4E8QmUXMqpQAznkjAd5zTWx61ktyXrynNAfVBT07Wl2mkooCGWe4+iHV+DLSQnKxg=="],
 
-    "@sproutboat/runtime": ["@sproutboat/runtime@0.51.2", "", {}, "sha512-OG2bQXtOAZDkPepTzOjHOH8oKC0S/6CxiGnj+/j/JYyeh21rRhsphkLY+zcjqBlNCkBRan/bPskWZDyOJ66TKw=="],
+    "@sproutboat/runtime": ["@sproutboat/runtime@0.51.4", "", {}, "sha512-qcPTteCLtBvSDMld33PY0mKwnGtI0wpEXw4hq5xDz8fcNvJgb8UkOJ6YzXrkChf/eC2Yzp/BZ41iMrwScjfY7A=="],
 
     "@sproutboat/toolchain": ["@sproutboat/toolchain@0.31.0", "", {}, "sha512-2H58qXZDwBmYS+RYDoVcxqnBqqNwi9GVRWIHR3QCm+TAEx2IJn36gG9mj8woFaNzKnva9MNAOCac22855b0PMg=="],
 
