@@ -67,7 +67,7 @@ export {
  * toolchain ships, composed in sproutd's worker shape and served by the toolchain's vendored uWebSockets shim
  * over its flat native-fetch bridge; sproutd-alpha22-standalone-port.md). The toolchain's `standaloneChannel()`
  * decides, so the CLI and the runtime's native tests agree. `SPROUTBOAT_PORFFOR_CHANNEL` may name `alpha-26`;
- * alpha 19, 21, 22 and 23 are errors that say they are no longer supported.
+ * alpha 19 and 21 to 25 are errors that say they are no longer supported.
  */
 export type PorfforChannel = StandaloneChannel;
 export function porfforChannel(): PorfforChannel {
